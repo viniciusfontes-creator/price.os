@@ -1,0 +1,133 @@
+{
+    "name": "[WEBHOOK] Market Monitor Update",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "market-monitor/update",
+                "options": {}
+            },
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                460,
+                300
+            ],
+            "id": "webhook-node"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Validate and split input IDs into individual items\nconst ids = $input.all()[0].json.listingIds;\n\nif (!ids || !Array.isArray(ids)) {\n  throw new Error('Invalid input: listingIds must be an array');\n}\n\nreturn ids.map(id => ({\n  json: {\n    id_numerica: id.toString(),\n    url: `https://www.airbnb.com.br/rooms/${id}`\n  }\n}));"
+            },
+            "name": "Split IDs",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                680,
+                300
+            ],
+            "id": "split-ids-node"
+        },
+        {
+            "parameters": {
+                "batchSize": 1,
+                "options": {}
+            },
+            "name": "SplitInBatches",
+            "type": "n8n-nodes-base.splitInBatches",
+            "typeVersion": 2,
+            "position": [
+                900,
+                300
+            ],
+            "id": "split-batches-node"
+        },
+        {
+            "parameters": {},
+            "name": "--- REPLACE WITH SCRAPER ---",
+            "type": "n8n-nodes-base.noOp",
+            "typeVersion": 1,
+            "position": [
+                1120,
+                300
+            ],
+            "notes": "Aqui você deve inserir o nó do seu Scraper (Apify ou HTTP Request) que busca os dados usando o 'id_numerica' ou 'url' do item atual.",
+            "id": "scraper-placeholder-node"
+        },
+        {
+            "parameters": {
+                "tableId": "airbnb_extracoes",
+                "operation": "upsert",
+                "columns": "id_numerica, checkin_formatado",
+                "options": {}
+            },
+            "name": "Supabase Upsert",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                1340,
+                300
+            ],
+            "notes": "Configure suas credenciais do Supabase aqui. Mapeie os campos retornados pelo Scraper para as colunas da tabela.",
+            "id": "supabase-node"
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Split IDs",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split IDs": {
+            "main": [
+                [
+                    {
+                        "node": "SplitInBatches",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "SplitInBatches": {
+            "main": [
+                [
+                    {
+                        "node": "--- REPLACE WITH SCRAPER ---",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "--- REPLACE WITH SCRAPER ---": {
+            "main": [
+                [
+                    {
+                        "node": "Supabase Upsert",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Supabase Upsert": {
+            "main": [
+                [
+                    {
+                        "node": "SplitInBatches",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}
