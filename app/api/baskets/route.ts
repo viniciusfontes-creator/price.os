@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-client'
+import { getTarifario, getPropriedades } from '@/lib/bigquery-service'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -9,6 +10,7 @@ export async function GET(request: Request) {
     const propertyId = searchParams.get('propertyId')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
+    const withHistory = searchParams.get('withHistory') === 'true'
 
     try {
         // 1. Fetch Baskets and their items
@@ -83,7 +85,7 @@ export async function GET(request: Request) {
         };
 
         // 3. Fetch external competitor data (Airbnb listings)
-        if (allExternalIds.length > 0) {
+        if (allExternalIds.length > 0 && withHistory) {
             // Build URL patterns for search (e.g., '%rooms/1234567%')
             // We use OR filtering since Supabase doesn't support regex well
             // For efficiency, fetch all matching URLs and filter in memory
@@ -143,12 +145,15 @@ export async function GET(request: Request) {
 
         // 4. Fetch internal property data
         if (allInternalIds.length > 0) {
-            const { data: properties, error: propertiesError } = await supabase
-                .from('propriedades')
-                .select('*')
-                .in('idpropriedade', allInternalIds)
+            const properties = await getPropriedades().catch(err => {
+                console.error('[API] Properties error:', err);
+                return [];
+            });
 
-            if (propertiesError) console.error('[API] Properties error:', propertiesError)
+            const allTarifario = withHistory ? await getTarifario().catch(err => {
+                console.error('[API] Error fetching tarifario', err);
+                return [];
+            }) : [];
 
             if (properties && properties.length > 0) {
                 baskets.forEach((basket: any) => {
@@ -158,6 +163,67 @@ export async function GET(request: Request) {
                         const property = properties.find(p => p.idpropriedade?.toString() === item.internal_property_id?.toString())
                         if (property) {
                             item.internal_property_data = property
+
+                            const propTarifario = allTarifario.filter(t => t.idpropriedade?.toString() === property.idpropriedade?.toString());
+                            const customHistory: any[] = [];
+
+                            if (withHistory && propTarifario.length > 0) {
+                                // Calculate Holidays dynamically
+                                const calcEaster = (year: number) => {
+                                    const a = year % 19, b = Math.floor(year / 100), c = year % 100;
+                                    const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+                                    const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
+                                    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+                                    const month = Math.floor((h + l - 7 * m + 114) / 31) - 1, day = ((h + l - 7 * m + 114) % 31) + 1;
+                                    return new Date(Date.UTC(year, month, day));
+                                }
+
+                                const today = new Date();
+                                const maxLimit = new Date(); maxLimit.setDate(maxLimit.getDate() + 365);
+
+                                const holidays: Record<string, number> = {};
+                                [today.getFullYear(), today.getFullYear() + 1].forEach(y => {
+                                    const easter = calcEaster(y);
+
+                                    const sextaSanta = new Date(easter); sextaSanta.setUTCDate(easter.getUTCDate() - 2);
+                                    holidays[sextaSanta.toISOString().substring(0, 10)] = 3; // 3 nights
+
+                                    const carnaval = new Date(easter); carnaval.setUTCDate(easter.getUTCDate() - 50);
+                                    holidays[carnaval.toISOString().substring(0, 10)] = 4; // 4 nights
+
+                                    const rev = new Date(Date.UTC(y, 11, 28));
+                                    holidays[rev.toISOString().substring(0, 10)] = 5; // 5 nights
+                                });
+
+                                // Check each day from today to +365
+                                for (let d = new Date(today); d <= maxLimit; d.setDate(d.getDate() + 1)) {
+                                    const dateStr = d.toISOString().substring(0, 10);
+
+                                    // Verify if it's a holiday or weekend (Friday/Saturday)
+                                    const isWeekend = d.getUTCDay() === 5 || d.getUTCDay() === 6;
+                                    const holidayNights = holidays[dateStr];
+
+                                    if (isWeekend || holidayNights) {
+                                        // Find applicable rate
+                                        const applicableTarifario = propTarifario.find(t => {
+                                            const startStr = typeof t.from === 'object' ? t.from.value : String(t.from);
+                                            const startDate = new Date(startStr);
+                                            const endDate = new Date(String(t.to));
+                                            return d >= startDate && d <= endDate;
+                                        });
+
+                                        if (applicableTarifario && applicableTarifario.baserate) {
+                                            customHistory.push({
+                                                checkin_formatado: d.toISOString(),
+                                                data_extracao: new Date().toISOString(),
+                                                preco_por_noite: applicableTarifario.baserate,
+                                                holiday_calc: !!holidayNights
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            item.history = customHistory;
                         }
                     })
                 })
@@ -206,8 +272,6 @@ export async function POST(request: Request) {
             console.error('[API] Missing required field: name')
             return NextResponse.json({ success: false, error: 'Name is required' }, { status: 400 })
         }
-
-        console.log('[API] Creating basket:', { name, internal_property_id, internal_property_ids, location, guest_capacity })
 
         // Create basket with typology metadata
         const { data: basket, error: basketError } = await supabase
@@ -268,8 +332,6 @@ export async function PATCH(request: Request) {
 
         const body = await request.json()
         const { name, location, guest_capacity, internal_property_ids } = body
-
-        console.log('[API] Updating basket:', { id, name, location, guest_capacity, internal_property_ids })
 
         // Update basket metadata
         const updateData: any = {}

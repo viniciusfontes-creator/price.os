@@ -52,9 +52,6 @@ export function PartnernameSalesRanking({ data }: PartnernameSalesRankingProps) 
         ]
         setCurrentMonthYear(`${monthNames[month - 1]} ${year}`)
 
-        console.log("[v0] Partnername Ranking - Current month range:", currentMonthStart, "to", currentMonthEnd)
-        console.log("[v0] Total data items:", data.length)
-
         const currentMonthReservas = data
           .filter((item) =>
             item.reservas.some(
@@ -66,8 +63,6 @@ export function PartnernameSalesRanking({ data }: PartnernameSalesRankingProps) 
               .filter((reserva: any) => reserva.creationdate >= currentMonthStart && reserva.creationdate <= currentMonthEnd)
               .map((reserva: any) => ({ ...reserva, propriedade: item.propriedade })),
           )
-
-        console.log("[v0] Current month reservas found:", currentMonthReservas.length)
 
         const partnerMap = new Map<string, PartnernameSales>()
 
@@ -95,7 +90,6 @@ export function PartnernameSalesRanking({ data }: PartnernameSalesRankingProps) 
           .sort((a, b) => b.totalReservas - a.totalReservas)
           .slice(0, 5)
 
-        console.log("[v0] Final ranking data:", rankingData)
         setRankings(rankingData)
       } catch (error) {
         console.error("Erro ao carregar ranking por partnername:", error)

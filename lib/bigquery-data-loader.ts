@@ -58,15 +58,16 @@ export const BIGQUERY_QUERIES = {
     ORDER BY creationdate DESC
   `,
 
-    // Goals by checkout
+    // Goals by checkout - get all months from stage table
     GOALS_CHECKOUT: `
     SELECT
       IdPropriedade as idpropriedade,
-      FORMAT_DATE('%m/%Y', PARSE_DATE('%m/%Y', mes_ano)) AS mes_ano,
+      mes_ano,
       SAFE_CAST(meta AS NUMERIC) AS meta,
-      SAFE_CAST(meta_movel AS NUMERIC) AS meta_movel
-    FROM \`warehouse.meta_e_meta_movel_checkout\`
-    WHERE mes_ano = FORMAT_DATE('%m/%Y', CURRENT_DATE())
+      Base_ou_Nova
+    FROM \`stage.metas_checkout_mensais_unidade\`
+    WHERE EXTRACT(YEAR FROM PARSE_DATE('%m/%Y', mes_ano)) = EXTRACT(YEAR FROM CURRENT_DATE())
+    ORDER BY IdPropriedade, mes_ano
   `,
 
     // Daily sales summary

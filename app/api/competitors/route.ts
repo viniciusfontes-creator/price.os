@@ -130,7 +130,8 @@ export async function GET(request: Request) {
                 dist_km: latest.distancia_km,
                 preco_por_noite: latestPrice,
                 trend_percent: trendPercent,
-                historico_precos: sortedGroup.map(item => ({
+                history: sortedGroup,
+                historico_precos: sortedGroup.map((item: any) => ({
                     data: item.data_extracao,
                     preco: Number(item.preco_total) / Number(item.quantidade_noites)
                 }))

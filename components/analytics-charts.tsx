@@ -174,9 +174,6 @@ export function AnalyticsCharts({ data, globalFilters }: AnalyticsChartsProps) {
   const processChartData = () => {
     const { xAxis, yAxis, secondaryYAxis, dateField, startDate, endDate } = filters
 
-    console.log("[v0] Processing chart data with global filters:", globalFilters)
-    console.log("[v0] Raw data length:", data.length)
-
     if (xAxis === "nomepropriedade" && yAxis === "dias_sem_vendas") {
       const hoje = new Date()
       const propriedadeData = new Map<string, { criacaoMaisAntiga: Date | null; pricepernight: number }>()
@@ -211,9 +208,6 @@ export function AnalyticsCharts({ data, globalFilters }: AnalyticsChartsProps) {
         })
       })
 
-      console.log("[v0] Properties after global filters:", filteredCount)
-      console.log("[v0] Unique properties for chart:", propriedadeData.size)
-
       const processedData = Array.from(propriedadeData.entries())
         .map(([nome, data]) => {
           const diasDesdeCreacao = data.criacaoMaisAntiga
@@ -229,7 +223,6 @@ export function AnalyticsCharts({ data, globalFilters }: AnalyticsChartsProps) {
         .sort((a, b) => b.value - a.value)
         .slice(0, 10)
 
-      console.log("[v0] Final chart data for TOP 10:", processedData.length, "items")
       setChartData(processedData)
       return
     }
@@ -283,10 +276,6 @@ export function AnalyticsCharts({ data, globalFilters }: AnalyticsChartsProps) {
       })
     })
 
-    console.log("[v0] Processed reservas:", processedReservas)
-    console.log("[v0] Filtered out reservas:", filteredOutReservas)
-    console.log("[v0] Unique chart categories:", dataMap.size)
-
     const processedData = Array.from(dataMap.entries())
       .map(([name, values]) => ({
         name,
@@ -296,7 +285,6 @@ export function AnalyticsCharts({ data, globalFilters }: AnalyticsChartsProps) {
       .sort((a, b) => b.value - a.value)
       .slice(0, 10)
 
-    console.log("[v0] Final chart data:", processedData.length, "items")
     setChartData(processedData)
   }
 

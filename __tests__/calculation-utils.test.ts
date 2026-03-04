@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals'
+/// <reference types="vitest/globals" />
 import {
     calculateTotalRevenue,
     calculateTotalReservations,
@@ -69,6 +69,7 @@ const mockData: IntegratedData[] = [
                 meta_movel: 4500,
             },
         ],
+        ocupacao: [],
         metricas: {
             totalReservas: 2,
             receitaTotal: 2500,
@@ -117,6 +118,7 @@ const mockData: IntegratedData[] = [
                 meta_movel: 2800,
             },
         ],
+        ocupacao: [],
         metricas: {
             totalReservas: 1,
             receitaTotal: 2000,

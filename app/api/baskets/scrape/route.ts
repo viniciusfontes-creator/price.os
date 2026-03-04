@@ -8,8 +8,6 @@ export async function POST(request: Request) {
         const body = await request.json();
         const { basketId } = body;
 
-        console.log(`[API] Scrape request for basket ${basketId}`);
-
         // 1. Rate Check
         const { data: basket, error: fetchError } = await supabase
             .from('competitor_baskets')
@@ -96,8 +94,6 @@ export async function POST(request: Request) {
                 items
             }
         };
-
-        console.log(`[API] Triggering n8n webhook for ${items.length} items:`, JSON.stringify(payload, null, 2));
 
         const n8nRes = await fetch(n8nUrl, {
             method: 'POST',

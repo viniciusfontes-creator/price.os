@@ -140,7 +140,6 @@ export function CreateBasketDialog({
             });
 
             const result = await res.json();
-            console.log('[CreateBasketDialog] API Response:', result);
 
             if (!result.success) throw new Error(result.error);
 

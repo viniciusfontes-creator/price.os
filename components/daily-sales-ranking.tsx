@@ -53,9 +53,6 @@ export function DailySalesRanking({ data }: DailySalesRankingProps) {
         ]
         setCurrentMonthYear(`${monthNames[month - 1]} ${year}`)
 
-        console.log("[v0] Daily Sales Ranking - Current month range:", currentMonthStart, "to", currentMonthEnd)
-        console.log("[v0] Total data items:", data.length)
-
         const currentMonthReserves = data.filter((item) => {
           const hasReserves = item.reservas && item.reservas.length > 0
           if (!hasReserves) return false
@@ -65,20 +62,9 @@ export function DailySalesRanking({ data }: DailySalesRankingProps) {
             const isAtendimento = reserva.partnername === "Atendimento"
             const hasAgent = reserva.agentname && reserva.agentname.trim() !== ""
 
-            if (isCurrentMonth && isAtendimento && hasAgent) {
-              console.log("[v0] Found current month sale:", {
-                property: item.propriedade?.nomepropriedade,
-                agent: reserva.agentname,
-                total: reserva.reservetotal,
-                creationdate: reserva.creationdate,
-              })
-            }
-
             return isCurrentMonth && isAtendimento && hasAgent
           })
         })
-
-        console.log("[v0] Properties with current month sales:", currentMonthReserves.length)
 
         const agentSales = new Map<string, { totalSales: number; reserveCount: number }>()
 
@@ -99,8 +85,6 @@ export function DailySalesRanking({ data }: DailySalesRankingProps) {
             }
           })
         })
-
-        console.log("[v0] Agent sales map:", Array.from(agentSales.entries()))
 
         const sortedAgents = Array.from(agentSales.entries())
           .map(([agentname, data], index) => ({

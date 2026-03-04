@@ -92,11 +92,21 @@ export function PriceEvolutionChart({ data, competitorMap = {}, onPointClick }: 
                                                 <p className="text-xs text-muted-foreground mb-2 pb-2 border-b flex justify-between items-center">
                                                     <span>{new Date(dataPoint.date).toLocaleDateString('pt-BR', { dateStyle: 'long' })}</span>
                                                 </p>
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <span className="font-bold text-sm">Diária Média:</span>
-                                                    <span className="font-bold text-primary text-sm">
-                                                        R$ {avgPrice?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                    </span>
+                                                <div className="flex flex-col gap-1 mb-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="font-bold text-sm text-blue-600">Média Mercado:</span>
+                                                        <span className="font-bold text-blue-600 text-sm">
+                                                            R$ {avgPrice?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                        </span>
+                                                    </div>
+                                                    {dataPoint.internalAvgPrice !== undefined && (
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="font-bold text-sm text-sky-600">Média Interna:</span>
+                                                            <span className="font-bold text-sky-600 text-sm">
+                                                                R$ {dataPoint.internalAvgPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                            </span>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 {components.length > 0 && (
@@ -126,8 +136,9 @@ export function PriceEvolutionChart({ data, competitorMap = {}, onPointClick }: 
                             <Line
                                 type="monotone"
                                 dataKey="avgPrice"
+                                name="Cesta (Mercado)"
                                 stroke="#3b82f6"
-                                strokeWidth={3}
+                                strokeWidth={2}
                                 dot={{
                                     r: 4,
                                     strokeWidth: 2,
@@ -154,6 +165,40 @@ export function PriceEvolutionChart({ data, competitorMap = {}, onPointClick }: 
                                     }
                                 }}
                             />
+                            {data.some(d => d.internalAvgPrice !== undefined) && (
+                                <Line
+                                    type="monotone"
+                                    dataKey="internalAvgPrice"
+                                    name="Imóveis Internos"
+                                    stroke="#0ea5e9"
+                                    strokeWidth={2}
+                                    connectNulls={true}
+                                    dot={{
+                                        r: 4,
+                                        strokeWidth: 2,
+                                        fill: '#fff',
+                                        cursor: 'pointer',
+                                        onClick: (e: any, payload: any) => {
+                                            if (payload && payload.payload) {
+                                                onPointClick?.(payload.payload);
+                                            } else if (e && e.payload) {
+                                                onPointClick?.(e.payload);
+                                            }
+                                        }
+                                    }}
+                                    activeDot={{
+                                        r: 8,
+                                        strokeWidth: 0,
+                                        fill: '#0284c7',
+                                        cursor: 'pointer',
+                                        onClick: (e: any, payload: any) => {
+                                            if (payload && payload.payload) {
+                                                onPointClick?.(payload.payload);
+                                            }
+                                        }
+                                    }}
+                                />
+                            )}
                         </LineChart>
                     </ResponsiveContainer>
                 </div>

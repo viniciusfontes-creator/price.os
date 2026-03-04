@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals'
+/// <reference types="vitest/globals" />
 import { applyGlobalFilters, getFilterOptions, getDatePresets } from '@/lib/filter-utils'
 import { DEFAULT_FILTERS } from '@/types'
 import type { IntegratedData, GlobalFilters } from '@/types'
@@ -54,6 +54,7 @@ const mockData: IntegratedData[] = [
                 meta_movel: 4500,
             },
         ],
+        ocupacao: [],
         metricas: {
             totalReservas: 2,
             receitaTotal: 2500,
@@ -102,6 +103,7 @@ const mockData: IntegratedData[] = [
                 meta_movel: 2800,
             },
         ],
+        ocupacao: [],
         metricas: {
             totalReservas: 1,
             receitaTotal: 2000,

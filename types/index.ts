@@ -65,6 +65,21 @@ export interface CalendarListing {
   rateplans: string // JSON com regras tarifárias
 }
 
+export interface BQDiscount {
+  idpropriedade: string
+  date: string | { value: string }
+  discount_percent: number
+  is_rise: number
+}
+
+// Faixa de tarifário por propriedade (stage.stays_listing_rates_sell)
+export interface TarifarioFaixa {
+  idpropriedade: string
+  from: string       // YYYY-MM-DD - início da faixa
+  to: string         // YYYY-MM-DD - fim da faixa
+  baserate: number   // valor base da diária
+}
+
 // stage.ocupacaoDisponibilidade_teste1 (Calendário)
 export interface OcupacaoDisponibilidade {
   idpropriedade: string
@@ -143,6 +158,8 @@ export interface IntegratedData {
   salesGoals?: SalesGoals
   metricas: PropriedadeMetricas
   ocupacao: OcupacaoDisponibilidade[]
+  tarifario: TarifarioFaixa[]
+  discounts?: BQDiscount[]
 }
 
 // Status de sincronização
@@ -227,6 +244,43 @@ export const DEFAULT_FILTERS: GlobalFilters = {
   status: [],
   receita: { min: null, max: null },
   antecedenciaReserva: { min: null, max: null },
+}
+
+// Performance de unidade na página de vendas
+export interface SalesUnitPerformance {
+  id: string
+  name: string
+  revenue: number
+  target: number
+  percentAchieved: number
+  daysSinceLastSale: number
+  salesLast7Days: number
+  status: "on-track" | "at-risk" | "behind"
+  suggestedAction?: string
+  suggestedPrice?: number
+  currentPrice: number
+  leadTime: number
+  mesAlvo?: number
+  anoAlvo?: number
+  targetPeriodId?: string
+  nightsSoldMonth?: number
+  availableNightsMonth?: number
+  noitesParaVendaEfetiva?: number
+  reservations: WebhookReserva[]
+  occupancy: OcupacaoDisponibilidade[]
+}
+
+// Métricas agregadas de vendas
+export interface SalesMetrics {
+  revenueMTD: number
+  revenueTarget: number
+  percentOfTarget: number
+  revenueToday: number
+  percentOfDailyPace: number
+  dailyPaceRequired: number
+  unitsAtRisk: number
+  averageTicket: number
+  averageLeadTime: number
 }
 
 export interface UnidadeMetrica extends WebhookPropriedade {

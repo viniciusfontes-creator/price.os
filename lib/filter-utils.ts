@@ -1,4 +1,5 @@
-import type { IntegratedData, WebhookReserva, GlobalFilters, DateFilterMode } from '@/types'
+import type { IntegratedData, WebhookReserva, WebhookMeta, GlobalFilters, DateFilterMode, PropriedadeMetricas } from '@/types'
+import { calculatePropertyStatus } from '@/lib/calculations'
 
 /**
  * Apply global filters to integrated data
@@ -171,8 +172,8 @@ function filterReservasByDate(
  */
 function recalculateMetrics(
     reservas: WebhookReserva[],
-    metas: any[]
-): any {
+    metas: WebhookMeta[]
+): PropriedadeMetricas {
     const totalReservas = reservas.length
     const receitaTotal = reservas.reduce((sum, r) => sum + r.reservetotal, 0)
     const ticketMedio = totalReservas > 0 ? receitaTotal / totalReservas : 0
@@ -183,6 +184,27 @@ function recalculateMetrics(
         ? reservas.reduce((sum, r) => sum + r.antecedencia_reserva, 0) / totalReservas
         : 0
 
+    // Calculate current month metrics for proper status
+    const hoje = new Date()
+    const anoMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`
+    const inicioMesStr = `${anoMes}-01`
+    const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0)
+    const fimMesStr = fimMes.toISOString().split('T')[0]
+
+    const receitaCheckoutMes = reservas
+        .filter(r => r.checkoutdate >= inicioMesStr && r.checkoutdate <= fimMesStr)
+        .reduce((sum, r) => sum + r.reservetotal, 0)
+
+    const metaMensal = metas
+        .filter(m => String(m.data_especifica || '').startsWith(anoMes))
+        .reduce((sum, m) => sum + (m.meta || 0), 0)
+
+    const metaMovel = metas
+        .filter(m => String(m.data_especifica || '').startsWith(anoMes))
+        .reduce((sum, m) => sum + (m.meta_movel || 0), 0)
+
+    const status = calculatePropertyStatus(receitaCheckoutMes, metaMensal, metaMovel)
+
     return {
         totalReservas,
         receitaTotal,
@@ -191,10 +213,10 @@ function recalculateMetrics(
         diariasVendidas,
         precoMedioNoite,
         antecedenciaMedia,
-        metaMensal: 0, // Would need to recalculate based on metas
-        metaMovel: 0,
-        receitaCheckoutMes: 0,
-        status: 'A' as const
+        metaMensal,
+        metaMovel,
+        receitaCheckoutMes,
+        status
     }
 }
 

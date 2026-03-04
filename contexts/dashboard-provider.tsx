@@ -1,8 +1,9 @@
 "use client"
 
-import { createContext, useContext, ReactNode } from 'react'
+import { createContext, useContext, ReactNode, useMemo } from 'react'
 import useSWR from 'swr'
 import type { IntegratedData } from '@/types'
+import { useViewContext } from '@/contexts/view-context'
 
 interface DashboardDataResponse {
     success: boolean
@@ -29,11 +30,24 @@ interface DashboardContextType {
 const DashboardContext = createContext<DashboardContextType | null>(null)
 
 // Fetcher function for SWR
-const fetcher = async (url: string): Promise<DashboardDataResponse> => {
+const fetcher = async ([url, viewType]: [string, string | null]): Promise<DashboardDataResponse> => {
+    // Note: We won't fetch if viewType is null, but we add it to the dependency array
+    if (!viewType) {
+        return {
+            success: true,
+            source: 'mock-fallback',
+            data: [],
+            count: 0,
+            fetchTime: 0,
+            timestamp: new Date().toISOString()
+        }
+    }
+
     const response = await fetch(url, {
         cache: 'no-store',
         headers: {
             'Content-Type': 'application/json',
+            'x-view-context': viewType,
         },
     })
 
@@ -55,7 +69,7 @@ const SWR_CONFIG = {
     revalidateOnFocus: false,      // Não revalidar quando a aba volta ao foco
     revalidateOnReconnect: true,   // Revalidar quando reconectar à internet
     refreshInterval: 300000,        // 5 minutos - revalidação silenciosa em background
-    dedupingInterval: 60000,       // Dedupe requests por 1 minuto
+    dedupingInterval: 300000,      // 5 min dedup - mesmo que o server cache TTL
     shouldRetryOnError: true,      // Tentar novamente em caso de erro
     errorRetryCount: 3,            // Máximo 3 tentativas
     keepPreviousData: true,        // Manter dados antigos enquanto revalida
@@ -66,8 +80,13 @@ interface DashboardProviderProps {
 }
 
 export function DashboardProvider({ children }: DashboardProviderProps) {
+    const { currentView } = useViewContext()
+
+    // Pass both URL and currentView to SWR key, so it refetches when view changes
+    const swrKey = currentView ? ['/api/dashboard/data', currentView] : null
+
     const { data: response, error, isLoading, isValidating, mutate } = useSWR<DashboardDataResponse>(
-        '/api/dashboard/data',
+        swrKey,
         fetcher,
         SWR_CONFIG
     )
@@ -75,7 +94,7 @@ export function DashboardProvider({ children }: DashboardProviderProps) {
     // Determine if this is the first load (no cached data yet)
     const isFirstLoad = isLoading && !response
 
-    const contextValue: DashboardContextType = {
+    const contextValue: DashboardContextType = useMemo(() => ({
         data: response?.data || [],
         loading: isLoading,
         error: error?.message || null,
@@ -85,12 +104,7 @@ export function DashboardProvider({ children }: DashboardProviderProps) {
         refetch: () => mutate(),
         lastFetch: response?.timestamp ? new Date(response.timestamp) : null,
         fetchTime: response?.fetchTime || null,
-    }
-
-    // Log cache status for debugging
-    if (response && !isLoading) {
-        console.log(`[SWR] Data loaded from ${response.source}: ${response.count} properties in ${response.fetchTime}ms (cached: ${!isValidating})`)
-    }
+    }), [response, error, isLoading, isValidating, isFirstLoad, mutate])
 
     return (
         <DashboardContext.Provider value={contextValue}>

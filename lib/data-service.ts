@@ -52,7 +52,6 @@ async function fetchFromApi(): Promise<IntegratedData[]> {
         const result = await response.json()
 
         if (result.useMock || !result.data) {
-            console.log('[DataService] API indicated mock data should be used')
             return getMockData()
         }
 
@@ -68,7 +67,6 @@ async function fetchFromApi(): Promise<IntegratedData[]> {
  */
 async function getMockData(): Promise<IntegratedData[]> {
     const { generateMockIntegratedData } = await import('./mock-data')
-    console.log('[DataService] Using mock data')
     return generateMockIntegratedData()
 }
 

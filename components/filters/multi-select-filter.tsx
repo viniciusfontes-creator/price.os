@@ -29,15 +29,6 @@ export function MultiSelectFilter({
     const [isOpen, setIsOpen] = React.useState(false)
     const [search, setSearch] = React.useState("")
 
-    // Debug logging
-    React.useEffect(() => {
-        console.log(`[MultiSelectFilter] ${label}:`, {
-            optionsCount: options.length,
-            selectedCount: selected.length,
-            firstOptions: options.slice(0, 3)
-        })
-    }, [label, options.length, selected.length])
-
     const filteredOptions = search
         ? options.filter((opt) =>
             opt.label.toLowerCase().includes(search.toLowerCase())

@@ -8,7 +8,6 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 export async function POST(request: Request) {
     try {
         const body = await request.json()
-        console.log('[API] Adding item to basket:', body)
         const { basket_id, airbnb_listing_id, internal_property_id, item_type, is_primary } = body
 
         if (!basket_id) {
@@ -40,7 +39,6 @@ export async function POST(request: Request) {
                 throw error
             }
 
-            console.log('[API] Internal property added successfully:', data)
             return NextResponse.json({ success: true, data })
 
         } else {
@@ -67,7 +65,6 @@ export async function POST(request: Request) {
                 throw error
             }
 
-            console.log('[API] External competitor added successfully:', data)
             return NextResponse.json({ success: true, data })
         }
     } catch (error: any) {

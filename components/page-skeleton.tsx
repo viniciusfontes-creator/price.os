@@ -31,7 +31,7 @@ export function InitialLoadingScreen({ className }: InitialLoadingScreenProps) {
 
     useEffect(() => {
         // Simular progresso baseado no tempo médio de carregamento
-        const durations = [800, 1500, 2000, 1000] // Durações estimadas para cada step
+        const durations = [1500, 2500, 3000, 2000] // Durações estimadas para cada step (Total ~9s)
         let timeout: NodeJS.Timeout
 
         const updateStep = (index: number) => {

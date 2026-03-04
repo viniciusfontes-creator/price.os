@@ -6,13 +6,16 @@
  */
 
 import { executeQuery } from './bigquery-client'
+import { calculatePropertyStatus } from '@/lib/calculations'
 import type {
     WebhookPropriedade,
     WebhookReserva,
     WebhookMeta,
     SalesGoals,
     IntegratedData,
-    PropriedadeMetricas
+    PropriedadeMetricas,
+    TarifarioFaixa,
+    BQDiscount
 } from '@/types'
 
 // ============================================
@@ -22,6 +25,7 @@ import type {
 export interface BQPropriedade {
     idpropriedade: string
     nomepropriedade: string
+    name: string | null
     _i_maxguests: number | null
     nome_externo: string | null
     cidade: string | null
@@ -54,11 +58,18 @@ export interface BQReserva {
 }
 
 export interface BQMetaCheckout {
-    IdPropriedade: string
+    idpropriedade: string // alias from query
     mes_ano: string // mm/yyyy format
     meta: number
+    Base_ou_Nova: string // "Base" or "Nova"
 }
 
+export interface BQTarifario {
+    idpropriedade: string
+    from: { value: string } // BigQuery DATE returns {value: "YYYY-MM-DD"}
+    to: string              // STRING in YYYY-MM-DD
+    baserate: number | null
+}
 export interface BQPricingIntelligence {
     IdPropriedade: string
     nomePropriedade: string
@@ -122,9 +133,19 @@ export interface BQAirbnbCompetitor {
 // SQL QUERIES (from user specifications)
 // ============================================
 
-const SQL_PROPRIEDADES = `
+function getSqlPropriedades(viewContext?: string): string {
+    let filter = "p.status_aparente = 'Ativa'"
+
+    if (viewContext === 'short-stay') {
+        filter += " AND p.empreendimento_pousada IN ('Short Stay', 'Alto Padrão')"
+    } else if (viewContext === 'hotelaria') {
+        filter += " AND p.empreendimento_pousada = 'Empreendimento'"
+    }
+
+    return `
 SELECT
   p.idpropriedade,
+  p.name,
   p.nomepropriedade,
   p._i_maxguests,
   p.nome_externo,
@@ -145,8 +166,9 @@ LEFT JOIN (
   SELECT id, ROUND(AVG(baseratevalue),2) AS baserate_atual FROM \`stage.stays_listing_rates_sell\` GROUP BY 1
 ) t ON p.idpropriedade = t.id
 WHERE
-  p.status_aparente = 'Ativa'
+  ${filter}
 `
+}
 
 const SQL_RESERVAS = `
 SELECT
@@ -189,15 +211,38 @@ WHERE
 
 const SQL_METAS_CHECKOUT = `
 SELECT
-  IdPropriedade,
+  IdPropriedade as idpropriedade,
   mes_ano,
-  SAFE_CAST(meta AS NUMERIC) AS meta
+  SAFE_CAST(meta AS NUMERIC) AS meta,
+  Base_ou_Nova
 FROM
   \`stage.metas_checkout_mensais_unidade\`
 WHERE
-  mes_ano = FORMAT_DATE('%m/%Y', CURRENT_DATE())
-ORDER BY 
-  IdPropriedade
+  EXTRACT(YEAR FROM PARSE_DATE('%m/%Y', mes_ano)) = EXTRACT(YEAR FROM CURRENT_DATE())
+ORDER BY
+  idpropriedade, mes_ano
+`
+
+const SQL_TARIFARIO = `
+SELECT
+  id AS idpropriedade,
+  \`from\`,
+  \`to\`,
+  ROUND(baseratevalue, 2) AS baserate
+FROM \`stage.stays_listing_rates_sell\`
+WHERE EXTRACT(YEAR FROM \`from\`) >= EXTRACT(YEAR FROM CURRENT_DATE()) - 1
+ORDER BY id, DATE_DIFF(SAFE_CAST(\`to\` AS DATE), SAFE_CAST(\`from\` AS DATE), DAY) ASC
+`
+
+const SQL_DISCOUNTS = `
+SELECT
+  property_code AS idpropriedade,
+  date,
+  discount_percent,
+  is_rise
+FROM \`stage.stays_discounts_calendar\`
+WHERE SAFE_CAST(date AS DATE) >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
+ORDER BY idpropriedade, date
 `
 
 const SQL_METAS_CRIACAO = `
@@ -257,7 +302,8 @@ AnaliseProjetada AS (
 ),
 OcupacaoMes AS (
     SELECT idpropriedade, EXTRACT(MONTH FROM datas) AS mes, EXTRACT(YEAR FROM datas) AS ano,
-        COUNTIF(ocupado = 1) AS noites_vendidas, COUNTIF(ocupado = 0) AS noites_livres
+        COUNTIF(ocupado = 1 AND ocupado_proprietario = 0 AND manutencao = 0) AS noites_vendidas,
+        COUNTIF(ocupado = 0 AND ocupado_proprietario = 0 AND manutencao = 0) AS noites_livres
     FROM stage.ocupacaoDisponibilidade_teste1
     GROUP BY 1,2,3
 ),
@@ -267,7 +313,15 @@ FinanceiroMes AS (
     FROM warehouse.reservas_all r WHERE r.type != 'canceled' GROUP BY 1,2,3
 ),
 TarifarioAtual AS (
-    SELECT id, ROUND(AVG(baseratevalue),2) AS baserate_atual FROM stage.stays_listing_rates_sell GROUP BY 1
+    SELECT t.id, ROUND(t.baseRateValue, 2) AS baserate_atual
+    FROM stage.stays_listing_rates_sell t
+    INNER JOIN (
+        SELECT id, MAX(\`from\`) AS max_from
+        FROM stage.stays_listing_rates_sell
+        WHERE \`from\` <= CURRENT_DATE() AND baseRateValue IS NOT NULL
+        GROUP BY id
+    ) latest ON t.id = latest.id AND t.\`from\` = latest.max_from
+    WHERE t.baseRateValue IS NOT NULL
 ),
 UltimaVenda AS (
     SELECT idPropriedade, MAX(SAFE.PARSE_DATE('%d-%m-%Y', creationDate)) AS data_ultima_venda
@@ -338,8 +392,8 @@ ORDER BY
 // DATA FETCHING FUNCTIONS
 // ============================================
 
-export async function getPropriedades(): Promise<BQPropriedade[]> {
-    return executeQuery<BQPropriedade>(SQL_PROPRIEDADES)
+export async function getPropriedades(viewContext?: string): Promise<BQPropriedade[]> {
+    return executeQuery<BQPropriedade>(getSqlPropriedades(viewContext))
 }
 
 export async function getReservas(): Promise<BQReserva[]> {
@@ -348,6 +402,14 @@ export async function getReservas(): Promise<BQReserva[]> {
 
 export async function getMetasCheckout(): Promise<BQMetaCheckout[]> {
     return executeQuery<BQMetaCheckout>(SQL_METAS_CHECKOUT)
+}
+
+export async function getTarifario(): Promise<BQTarifario[]> {
+    return executeQuery<BQTarifario>(SQL_TARIFARIO)
+}
+
+export async function getDiscounts(): Promise<BQDiscount[]> {
+    return executeQuery<BQDiscount>(SQL_DISCOUNTS)
 }
 
 export async function getMetasCriacao(): Promise<BQMetaCriacao[]> {
@@ -376,29 +438,7 @@ function convertToNumber(value: unknown): number {
     return isNaN(parsed) ? 0 : Number(parsed.toFixed(2))
 }
 
-function calculateStatus(
-    receitaCheckoutMes: number,
-    metaMensal: number,
-    metaMovel: number
-): 'A' | 'B' | 'C' | 'D' | 'E' {
-    if (receitaCheckoutMes < 0.001) return 'E'
-
-    if (metaMensal > 0) {
-        const percentualMetaMensal = (receitaCheckoutMes / metaMensal) * 100
-        if (percentualMetaMensal >= 100) return 'A'
-    }
-
-    if (metaMovel > 0) {
-        const percentualMetaMovel = (receitaCheckoutMes / metaMovel) * 100
-        if (percentualMetaMovel >= 90) return 'B'
-        if (percentualMetaMovel >= 50) return 'C'
-        return 'D'
-    }
-
-    return 'D'
-}
-
-function transformBQPropriedade(bq: any): WebhookPropriedade {
+function transformBQPropriedade(bq: BQPropriedade): WebhookPropriedade {
     return {
         idpropriedade: bq.idpropriedade,
         nomepropriedade: bq.nomepropriedade,
@@ -434,32 +474,31 @@ function transformBQReserva(bq: BQReserva): WebhookReserva {
 }
 
 function transformBQMeta(bq: BQMetaCheckout): WebhookMeta {
-    // The new BQMetaCheckout only provides 'meta' and 'mes_ano'.
-    // 'data_especifica' and 'meta_movel' are no longer directly available from this source.
-    // We will set 'data_especifica' to the first day of the month and 'meta_movel' to 0 or derive it if needed elsewhere.
+    // Extract month and year from mes_ano (mm/yyyy format)
     const parts = (bq.mes_ano || '').split('/')
     let month = '01', year = '2024'
+    let monthNumber = 1
+
     if (parts.length === 2) {
         month = parts[0]
         year = parts[1]
-    } else {
-        // Fallback or log warning
-        console.warn(`[transformBQMeta] Invalid mes_ano format: ${bq.mes_ano}`)
+        monthNumber = parseInt(month, 10)
     }
-    const dataEspecifica = `${year}-${month}-01` // Assuming first day of the month for data_especifica
+    const dataEspecifica = `${year}-${month}-01`
 
     return {
-        IdPropriedade: bq.IdPropriedade,
+        IdPropriedade: bq.idpropriedade,
         data_especifica: dataEspecifica,
         meta: convertToNumber(bq.meta),
-        meta_movel: 0, // Default to 0 as it's not in the new BQMetaCheckout
+        meta_movel: 0,
+        mes: monthNumber,
     }
 }
 
 function calculateMetrics(
     reservas: WebhookReserva[],
     metas: WebhookMeta[],
-    ocupacao: any[] = []
+    ocupacao: BQOcupacao[] = []
 ): PropriedadeMetricas {
     if (reservas.length === 0) {
         return {
@@ -513,11 +552,6 @@ function calculateMetrics(
 
     const diariasVendidas = ocupacaoTargetMonth.length > 0 ? noitesOcupadasTarget : diariasMTDReservas
 
-    if (reservas.length > 0 && ocupacaoTargetMonth.length > 0) {
-        const propId = reservas[0].idpropriedade
-        console.log(`[Debug] ${propId}: Target ${targetMonthStr}, Ocupadas: ${noitesOcupadasTarget}, Lead: ${Math.round(antecedenciaMedia)}d`)
-    }
-
     const totalReservas = reservas.length
     const receitaCheckoutMes = reservas
         .filter((r) => r.checkoutdate >= inicioMesStr && r.checkoutdate <= fimMesStr)
@@ -531,7 +565,7 @@ function calculateMetrics(
         .filter((meta) => String(meta.data_especifica || '').startsWith(anoMes))
         .reduce((sum, meta) => sum + convertToNumber(meta.meta_movel), 0)
 
-    const status = calculateStatus(receitaCheckoutMes, metaMensal, metaMovel)
+    const status = calculatePropertyStatus(receitaCheckoutMes, metaMensal, metaMovel)
 
     return {
         totalReservas,
@@ -549,21 +583,16 @@ function calculateMetrics(
 }
 
 // ============================================
-// INTEGRATED DATA FUNCTION
-// ============================================
-
-export async function getIntegratedDataFromBigQuery(): Promise<IntegratedData[]> {
-    console.log('[BigQuery] Fetching data from BigQuery...')
-
-    const [bqPropriedades, bqReservas, bqMetas, bqMetasCriacao, bqOcupacao] = await Promise.all([
-        getPropriedades(),
+export async function getIntegratedDataFromBigQuery(viewContext?: string): Promise<IntegratedData[]> {
+    const [bqPropriedades, bqReservas, bqMetas, bqMetasCriacao, bqOcupacao, bqTarifario, bqDiscounts] = await Promise.all([
+        getPropriedades(viewContext),
         getReservas(),
         getMetasCheckout(),
         getMetasCriacao(),
         getOcupacao(),
+        getTarifario(),
+        getDiscounts()
     ])
-
-    console.log(`[BigQuery] Fetched: ${bqPropriedades.length} properties, ${bqReservas.length} reservations, ${bqMetas.length} goals, ${bqOcupacao.length} occupancy rows`)
 
     // Create maps for fast lookup
     const reservasByProp = new Map<string, WebhookReserva[]>()
@@ -578,10 +607,10 @@ export async function getIntegratedDataFromBigQuery(): Promise<IntegratedData[]>
     const metasByProp = new Map<string, WebhookMeta[]>()
     bqMetas.forEach((m) => {
         const transformed = transformBQMeta(m)
-        if (!metasByProp.has(m.IdPropriedade)) {
-            metasByProp.set(m.IdPropriedade, [])
+        if (!metasByProp.has(m.idpropriedade)) {
+            metasByProp.set(m.idpropriedade, [])
         }
-        metasByProp.get(m.IdPropriedade)!.push(transformed)
+        metasByProp.get(m.idpropriedade)!.push(transformed)
     })
 
     // Create sales goals from metas_criacao
@@ -594,6 +623,30 @@ export async function getIntegratedDataFromBigQuery(): Promise<IntegratedData[]>
                 mvenda_mensal: mc.Meta,
             })
         }
+    })
+
+    // Group tarifario by property
+    const tarifarioByProp = new Map<string, TarifarioFaixa[]>()
+    bqTarifario.forEach((t) => {
+        if (t.baserate == null) return // Skip null rates
+        if (!tarifarioByProp.has(t.idpropriedade)) {
+            tarifarioByProp.set(t.idpropriedade, [])
+        }
+        tarifarioByProp.get(t.idpropriedade)!.push({
+            idpropriedade: t.idpropriedade,
+            from: typeof t.from === 'object' ? t.from.value : String(t.from),
+            to: String(t.to),
+            baserate: t.baserate,
+        })
+    })
+
+    const discountsByProp = new Map<string, BQDiscount[]>()
+    bqDiscounts.forEach((d) => {
+        if (!discountsByProp.has(d.idpropriedade)) discountsByProp.set(d.idpropriedade, [])
+        discountsByProp.get(d.idpropriedade)!.push({
+            ...d,
+            date: typeof d.date === 'object' ? d.date.value : String(d.date) as any
+        })
     })
 
     // Build integrated data
@@ -612,6 +665,8 @@ export async function getIntegratedDataFromBigQuery(): Promise<IntegratedData[]>
             salesGoals: propSalesGoals,
             metricas,
             ocupacao: propOcupacao,
+            tarifario: tarifarioByProp.get(prop.idpropriedade) || [],
+            discounts: discountsByProp.get(prop.idpropriedade) || []
         }
     })
 }

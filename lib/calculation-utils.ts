@@ -1,4 +1,4 @@
-import type { IntegratedData, GlobalFilters, WebhookReserva } from '@/types'
+import type { IntegratedData, GlobalFilters } from '@/types'
 import { applyGlobalFilters } from './filter-utils'
 
 /**
@@ -102,18 +102,20 @@ export function calculateOccupancyRate(
 
     let occupiedNights = 0
 
-    for (let i = 0; i < days; i++) {
-        const checkDate = new Date(start)
-        checkDate.setDate(checkDate.getDate() + i)
-        const checkDateStr = checkDate.toISOString().split('T')[0]
-
-        filteredData.forEach((item) => {
-            const isOccupied = item.reservas.some(
-                (r) => r.checkindate <= checkDateStr && r.checkoutdate > checkDateStr
-            )
-            if (isOccupied) occupiedNights++
+    // Pre-compute occupied date sets per property to avoid O(days * properties * reservations)
+    filteredData.forEach((item) => {
+        const occupiedDates = new Set<string>()
+        item.reservas.forEach((r) => {
+            const checkin = new Date(r.checkindate)
+            const checkout = new Date(r.checkoutdate)
+            for (let d = new Date(Math.max(checkin.getTime(), start.getTime()));
+                 d < checkout && d < end;
+                 d.setDate(d.getDate() + 1)) {
+                occupiedDates.add(d.toISOString().split('T')[0])
+            }
         })
-    }
+        occupiedNights += occupiedDates.size
+    })
 
     const totalAvailableNights = filteredData.length * days
     return totalAvailableNights > 0 ? (occupiedNights / totalAvailableNights) * 100 : 0
