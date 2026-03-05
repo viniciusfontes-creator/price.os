@@ -212,48 +212,53 @@ export function DailyCompositionDialog({ open, onOpenChange, date, avgPrice, int
 
                         <ScrollArea className="h-[320px] pr-2">
                             <div className="space-y-2">
-                                {items.map((item) => (
-                                    <CompetitorDetailsDialog
-                                        key={item.id}
-                                        competitor={{
-                                            id: item.id,
-                                            name: item.name,
-                                            url: item.isInternal ? `https://beto.stays.com.br/i/apartment/${item.fullData?.internal_property_data?.idpropriedade || item.id}` : item.fullData?.airbnb_data?.url_anuncio,
-                                            avgRating: item.fullData?.airbnb_data?.media_avaliacao,
-                                            guests: item.fullData?.airbnb_data?.hospedes_adultos,
-                                            history: item.fullData?.history
-                                        }}
-                                        trigger={
-                                            <div
-                                                className={`group flex items-center justify-between p-3 rounded-lg border ${item.isInternal ? 'bg-sky-50/50 border-sky-200/50 hover:bg-sky-50 hover:border-sky-300' : 'bg-background hover:bg-muted/40 hover:border-primary/20'} transition-all cursor-pointer shadow-sm hover:shadow`}
-                                            >
-                                                <div className="flex flex-col overflow-hidden mr-4">
-                                                    <span className={`font-medium text-sm truncate ${item.isInternal ? 'text-sky-700' : 'group-hover:text-primary'} transition-colors`} title={item.name}>
-                                                        {item.name}
-                                                    </span>
-                                                    <div className="flex items-center gap-2 mt-0.5">
-                                                        <span className="text-[10px] text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">
-                                                            ID: {item.id}
+                                {items.map((item) => {
+                                    const guestsCount = item.fullData?.airbnb_data?.hospedes_adultos;
+                                    const displayName = `${item.name}${guestsCount ? ` - ${guestsCount} adultos` : ''}`;
+
+                                    return (
+                                        <CompetitorDetailsDialog
+                                            key={item.id}
+                                            competitor={{
+                                                id: item.id,
+                                                name: displayName,
+                                                url: item.isInternal ? `https://beto.stays.com.br/i/apartment/${item.fullData?.internal_property_data?.idpropriedade || item.id}` : item.fullData?.airbnb_data?.url_anuncio,
+                                                avgRating: item.fullData?.airbnb_data?.media_avaliacao,
+                                                guests: guestsCount,
+                                                history: item.fullData?.history
+                                            }}
+                                            trigger={
+                                                <div
+                                                    className={`group flex items-center justify-between p-3 rounded-lg border ${item.isInternal ? 'bg-sky-50/50 border-sky-200/50 hover:bg-sky-50 hover:border-sky-300' : 'bg-background hover:bg-muted/40 hover:border-primary/20'} transition-all cursor-pointer shadow-sm hover:shadow`}
+                                                >
+                                                    <div className="flex flex-col overflow-hidden mr-4">
+                                                        <span className={`font-medium text-sm truncate ${item.isInternal ? 'text-sky-700' : 'group-hover:text-primary'} transition-colors`} title={item.name}>
+                                                            {displayName}
                                                         </span>
-                                                        {item.isInternal && (
-                                                            <span className="text-[10px] text-sky-600 font-bold tracking-wider uppercase px-1.5 py-0.5 bg-sky-100 rounded">
-                                                                Interno
+                                                        <div className="flex items-center gap-2 mt-0.5">
+                                                            <span className="text-[10px] text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">
+                                                                ID: {item.id}
                                                             </span>
-                                                        )}
-                                                        {(item.isInternal || item.fullData?.airbnb_data?.url_anuncio) && (
-                                                            <ExternalLink className="w-3 h-3 text-muted-foreground opacity-50 group-hover:opacity-100" />
-                                                        )}
+                                                            {item.isInternal && (
+                                                                <span className="text-[10px] text-sky-600 font-bold tracking-wider uppercase px-1.5 py-0.5 bg-sky-100 rounded">
+                                                                    Interno
+                                                                </span>
+                                                            )}
+                                                            {(item.isInternal || item.fullData?.airbnb_data?.url_anuncio) && (
+                                                                <ExternalLink className="w-3 h-3 text-muted-foreground opacity-50 group-hover:opacity-100" />
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className={`font-bold whitespace-nowrap text-sm ${item.isInternal ? 'text-sky-700' : ''}`}>
+                                                            R$ {item.price.toLocaleString('pt-BR')}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                                <div className="text-right">
-                                                    <div className={`font-bold whitespace-nowrap text-sm ${item.isInternal ? 'text-sky-700' : ''}`}>
-                                                        R$ {item.price.toLocaleString('pt-BR')}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        }
-                                    />
-                                ))}
+                                            }
+                                        />
+                                    );
+                                })}
                             </div>
                         </ScrollArea>
                     </div>

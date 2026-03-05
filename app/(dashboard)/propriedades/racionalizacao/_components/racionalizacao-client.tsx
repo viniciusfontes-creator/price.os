@@ -278,6 +278,40 @@ export function RacionalizacaoClient() {
         } catch (e) { console.error(e) } finally { setSaving(false) }
     }
 
+    const handleDeleteBasket = async () => {
+        if (!selectedBasket || !confirm(`Tem certeza que deseja APAGAR a cesta ${selectedBasket.name} e todas as suas correlações?`)) return
+        setSaving(true)
+        try {
+            await supabase.from('basket_items').delete().eq('basket_id', selectedBasket.id)
+            await supabase.from('basket_pricing_rules').delete().or(`dependent_basket_id.eq.${selectedBasket.id},base_basket_id.eq.${selectedBasket.id}`)
+            const { error } = await supabase.from('competitor_baskets').delete().eq('id', selectedBasket.id)
+            if (!error) {
+                setBaskets(baskets.filter(b => b.id !== selectedBasket.id))
+                setSelectedBasket(null)
+                alert("Cesta removida com sucesso!")
+            } else {
+                console.error(error)
+                alert("Erro ao remover cesta.")
+            }
+        } catch (e) { console.error(e) } finally { setSaving(false) }
+    }
+
+    const handleRemoveProperty = async (item: any, propName: string) => {
+        if (!confirm(`Remover '${propName}' desta cesta?`)) return
+        setSaving(true)
+        try {
+            const { error } = await supabase.from('basket_items').delete().eq('id', item.id)
+            if (!error) {
+                const updatedItems = selectedBasket.basket_items.filter((i: any) => i.id !== item.id)
+                const updatedBasket = { ...selectedBasket, basket_items: updatedItems }
+                setSelectedBasket(updatedBasket)
+                setBaskets(prev => prev.map(b => b.id === updatedBasket.id ? updatedBasket : b))
+            } else {
+                console.error(error)
+            }
+        } catch (e) { console.error(e) } finally { setSaving(false) }
+    }
+
     const getRuleDisplayInfo = (basketId: string) => {
         const rule = rules.find(r => r.dependent_basket_id === basketId)
         if (!rule) return null
@@ -509,9 +543,14 @@ export function RacionalizacaoClient() {
                                     <div className="text-xs text-muted-foreground font-medium mb-1">Cesta Alvo (Dependente)</div>
                                     <h3 className="font-bold text-lg leading-none">{selectedBasket.name}</h3>
                                 </div>
-                                <Button variant="ghost" size="icon" onClick={() => setSelectedBasket(null)} className="h-8 w-8 rounded-full">
-                                    <X className="h-4 w-4" />
-                                </Button>
+                                <div className="flex items-center gap-1">
+                                    <Button variant="ghost" size="icon" onClick={handleDeleteBasket} disabled={saving} className="h-8 w-8 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10" title="Apagar Cesta">
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" onClick={() => setSelectedBasket(null)} className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground">
+                                        <X className="h-4 w-4" />
+                                    </Button>
+                                </div>
                             </div>
 
                             <div className="p-6 flex-1 flex flex-col gap-6">
@@ -581,10 +620,22 @@ export function RacionalizacaoClient() {
                                         {selectedBasket.basket_items?.filter((i: any) => i.item_type === 'internal').map((item: any) => {
                                             // Resolver o nome vindo do BigQuery
                                             const bqProp = allProperties.find(p => String(p.idpropriedade) === item.internal_property_id)
+                                            const propName = bqProp ? bqProp.nome : `Prop ID: ${item.internal_property_id}`
                                             return (
-                                                <div key={item.id} className="text-xs py-1.5 px-2 hover:bg-muted truncate rounded border border-transparent hover:border-border flex items-center gap-2">
-                                                    <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
-                                                    {bqProp ? bqProp.nome : `Prop ID: ${item.internal_property_id} `}
+                                                <div key={item.id} className="text-xs py-1.5 px-2 hover:bg-muted rounded border border-transparent hover:border-border flex items-center justify-between group">
+                                                    <div className="flex items-center gap-2 truncate">
+                                                        <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                                                        <span className="truncate">{propName}</span>
+                                                    </div>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        disabled={saving}
+                                                        onClick={() => handleRemoveProperty(item, propName)}
+                                                        className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                                                    >
+                                                        <X className="h-3 w-3" />
+                                                    </Button>
                                                 </div>
                                             )
                                         })}

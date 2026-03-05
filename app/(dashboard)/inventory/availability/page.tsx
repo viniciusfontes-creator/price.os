@@ -147,16 +147,14 @@ export default function AvailabilityPage() {
       gaps += p.availability.filter((d: any) => d.status === "gap").length
     })
 
-    // Next weekend occupancy %
-    const nFri = nextDay(today, 5), nSat = addDays(nFri, 1), nSun = addDays(nFri, 2)
-    const friStr = format(nFri, "yyyy-MM-dd"), satStr = format(nSat, "yyyy-MM-dd"), sunStr = format(nSun, "yyyy-MM-dd")
-    const wkendDates = [nFri, nSat, nSun]
-    const wkendStrs = [friStr, satStr, sunStr]
-    let wkOcc = 0, wkTotal = total * 3
-    wkendDates.forEach((d, idx) => {
-      properties.forEach(p => { if (isOccupied(p, d, wkendStrs[idx])) wkOcc++ })
+    // Next weekend occupancy % (matches Saturday's occupancy rate on the calendar)
+    const nFri = nextDay(today, 5), nSat = addDays(nFri, 1)
+    const friStr = format(nFri, "yyyy-MM-dd"), satStr = format(nSat, "yyyy-MM-dd")
+    let satOcc = 0
+    properties.forEach(p => {
+      if (getStatus(p, nSat, satStr) === "occupied") satOcc++
     })
-    const weekendOcc = wkTotal > 0 ? Math.round((wkOcc / wkTotal) * 100) : 0
+    const weekendOcc = total > 0 ? Math.round((satOcc / total) * 100) : 0
 
     // Weekend free count (Sex + Sab)
     const wkFree = enrichedProperties.filter(p => {
@@ -251,7 +249,7 @@ export default function AvailabilityPage() {
 
       {/* KPIs */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <KpiCard label="Ocupação FDS" value={`${weekendOccupancy}%`} sub={`Sex–Dom ${format(nextFri, "dd/MM")}`} />
+        <KpiCard label="Ocupação FDS" value={`${weekendOccupancy}%`} sub={`Sábado ${format(nextSat, "dd/MM")}`} />
         <KpiCard
           label="Unidades vencidas"
           value={String(expiredCount)}

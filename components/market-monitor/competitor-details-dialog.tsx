@@ -37,6 +37,7 @@ export function CompetitorDetailsDialog({ competitor, trigger }: CompetitorDetai
         checkinDate: h.checkin_formatado ? new Date(h.checkin_formatado) : null,
         price: h.preco_por_noite || (h.preco_total && h.quantidade_noites ? h.preco_total / h.quantidade_noites : 0),
         nights: h.quantidade_noites,
+        guests: h.quantidade_hospedes || h.hospedes_adultos,
         rawDate: h.checkin_formatado // for chart key
     })).filter((h: any) => h.price > 0 && h.checkinDate)
         .sort((a: any, b: any) => {
@@ -164,8 +165,9 @@ export function CompetitorDetailsDialog({ competitor, trigger }: CompetitorDetai
                                                     <TableCell className="font-medium">
                                                         {point.checkinDate ? format(point.checkinDate, "dd/MM/yyyy") : '-'}
                                                     </TableCell>
-                                                    <TableCell className="text-xs text-muted-foreground">
-                                                        {point.extractionDate ? format(point.extractionDate, "dd/MM/yy HH:mm") : '-'}
+                                                    <TableCell className="text-xs text-muted-foreground flex flex-col gap-0.5">
+                                                        <span>{point.extractionDate ? format(point.extractionDate, "dd/MM/yy HH:mm") : '-'}</span>
+                                                        {point.guests && <span className="text-[10px] text-muted-foreground/70">({point.guests} adultos)</span>}
                                                     </TableCell>
                                                     <TableCell className="text-right font-bold">
                                                         R$ {point.price?.toFixed(2)}

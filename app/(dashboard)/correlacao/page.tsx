@@ -1251,10 +1251,14 @@ export default function MarketMonitorPage() {
                                             <AddItemDialog
                                                 basketId={selectedBasket.id}
                                                 basketName={selectedBasket.name}
-                                                // Use first internal property or first available global property as reference for geolocation
                                                 property={(() => {
                                                     const internalId = selectedBasket.basket_items?.find(i => i.item_type === 'internal')?.internal_property_id;
                                                     return (internalId ? properties.find(p => p.idpropriedade === internalId) : null) || properties[0];
+                                                })()}
+                                                availableProperties={(() => {
+                                                    const internalIds = selectedBasket.basket_items?.filter(i => i.item_type === 'internal').map(i => i.internal_property_id) || [];
+                                                    const props = internalIds.map(id => properties.find(p => p.idpropriedade === id)).filter(Boolean) as Property[];
+                                                    return props.length > 0 ? props : properties;
                                                 })()}
                                                 existingIds={selectedBasket.basket_items?.map(i => i.airbnb_listing_id || i.id) || []}
                                                 onSuccess={() => mutateBaskets()}

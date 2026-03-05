@@ -23,6 +23,7 @@ interface AddItemDialogProps {
     basketId: string;
     basketName: string;
     property: Property;
+    availableProperties?: Property[];
     existingIds?: string[];
     onSuccess: () => void;
 }
@@ -41,13 +42,25 @@ interface Suggestion {
     quantidade_noites?: number;
 }
 
-export function AddItemDialog({ basketId, basketName, property, existingIds = [], onSuccess }: AddItemDialogProps) {
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+export function AddItemDialog({ basketId, basketName, property, availableProperties = [], existingIds = [], onSuccess }: AddItemDialogProps) {
     const [open, setOpen] = useState(false);
-    const [url, setUrl] = useState('');
     const [loading, setLoading] = useState(false);
     const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
     const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+    const [referenceProperty, setReferenceProperty] = useState<Property>(property);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const { toast } = useToast();
+
+    // Reset reference when dialog opens or property prop changes
+    useEffect(() => {
+        if (open) {
+            setReferenceProperty(property);
+            setSelectedIds([]);
+        }
+    }, [open, property]);
 
     // AI Similarity Score Logic
     const calculateMatchScore = (targetProp: Property, competitor: Suggestion) => {
@@ -78,15 +91,15 @@ export function AddItemDialog({ basketId, basketName, property, existingIds = []
         return Math.max(5, Math.min(99, Math.round(score)));
     };
 
-    // Load Suggestions when dialog opens
+    // Load Suggestions when dialog opens or reference changes
     useEffect(() => {
-        if (open && property.latitude && property.longitude) {
+        if (open && referenceProperty?.latitude && referenceProperty?.longitude) {
             const fetchSuggestions = async () => {
                 setLoadingSuggestions(true);
                 try {
                     const params = new URLSearchParams({
-                        lat: property.latitude!.toString(),
-                        lon: property.longitude!.toString(),
+                        lat: referenceProperty.latitude!.toString(),
+                        lon: referenceProperty.longitude!.toString(),
                         radius: '2', // 2km radius for tight suggestions
                         limit: '100'  // Fetch 100 to rank them
                     });
@@ -107,7 +120,7 @@ export function AddItemDialog({ basketId, basketName, property, existingIds = []
                             })
                             .map((c: any) => ({
                                 ...c,
-                                matchScore: calculateMatchScore(property, c)
+                                matchScore: calculateMatchScore(referenceProperty, c)
                             }))
                             .sort((a: any, b: any) => (b.matchScore || 0) - (a.matchScore || 0))
                             .slice(0, 30); // Top 30
@@ -122,35 +135,36 @@ export function AddItemDialog({ basketId, basketName, property, existingIds = []
             };
             fetchSuggestions();
         }
-    }, [open, property, existingIds]);
+    }, [open, referenceProperty, existingIds]);
 
-    const handleAdd = async (listingId: string | number) => {
+    const handleAddSelected = async () => {
+        if (selectedIds.length === 0) return;
         setLoading(true);
         try {
-            // Clean ID if it's a URL
-            let cleanedId = listingId.toString();
-            const urlMatch = cleanedId.match(/rooms\/(\d+)/);
-            if (urlMatch && urlMatch[1]) cleanedId = urlMatch[1];
+            await Promise.all(selectedIds.map(async (listingId) => {
+                let cleanedId = listingId.toString();
+                const urlMatch = cleanedId.match(/rooms\/(\d+)/);
+                if (urlMatch && urlMatch[1]) cleanedId = urlMatch[1];
 
-            const res = await fetch('/api/baskets/items', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    basket_id: basketId,
-                    airbnb_listing_id: cleanedId
-                })
-            });
+                const res = await fetch('/api/baskets/items', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        basket_id: basketId,
+                        airbnb_listing_id: cleanedId
+                    })
+                });
 
-            const result = await res.json();
-            if (!result.success) throw new Error(result.error);
+                const result = await res.json();
+                if (!result.success) throw new Error(result.error);
+            }));
 
             toast({
-                title: 'Concorrente adicionado!',
-                description: `ID ${cleanedId} salvo na cesta.`,
+                title: 'Concorrentes adicionados!',
+                description: `${selectedIds.length} item(ns) salvo(s) na cesta.`,
             });
 
             setOpen(false);
-            setUrl('');
             onSuccess();
         } catch (error: any) {
             toast({
@@ -163,6 +177,12 @@ export function AddItemDialog({ basketId, basketName, property, existingIds = []
         }
     };
 
+    const toggleSelection = (id: string) => {
+        setSelectedIds(prev =>
+            prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+        );
+    };
+
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
@@ -171,83 +191,130 @@ export function AddItemDialog({ basketId, basketName, property, existingIds = []
                 </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md h-[85vh] flex flex-col overflow-hidden">
-                <DialogHeader>
+                <DialogHeader className="pb-2">
                     <DialogTitle>Adicionar a "{basketName}"</DialogTitle>
-                    <DialogDescription className="text-xs text-muted-foreground pt-1">
-                        Baseado em similaridade com <strong>{property?.nome || 'Propriedade de referência'}</strong>.
-                        <br />
-                        <span className="opacity-70">Exibindo competidores monitorados na nossa base.</span>
+                    <DialogDescription className="text-xs text-muted-foreground pt-1 flex flex-col gap-2">
+                        <span>Baseado em similaridade com a propriedade de referência.</span>
+                        {availableProperties && availableProperties.length > 0 && (
+                            <Select
+                                value={referenceProperty?.idpropriedade || ''}
+                                onValueChange={(val) => {
+                                    const prop = availableProperties.find(p => p.idpropriedade === val) || property;
+                                    setReferenceProperty(prop);
+                                    setSelectedIds([]);
+                                }}
+                            >
+                                <SelectTrigger className="w-full h-8 text-xs">
+                                    <SelectValue placeholder="Selecione um imóvel base" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {availableProperties.map(prop => (
+                                        <SelectItem key={prop.idpropriedade} value={prop.idpropriedade} className="text-xs">
+                                            {prop.nome}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        )}
+                        <span className="opacity-70 mt-1">Exibindo competidores monitorados na nossa base.</span>
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="flex-1 min-h-0 pt-4 overflow-hidden">
-                    <ScrollArea className="h-full w-full pr-4">
+                <div className="flex-1 min-h-0 pt-2 overflow-hidden flex flex-col relative">
+                    <ScrollArea className="h-full w-full pr-4 pb-16">
                         {loadingSuggestions ? (
                             <div className="flex flex-col items-center justify-center h-40 gap-2">
                                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                                <span className="text-xs text-muted-foreground">Calculando similaridade...</span>
+                                <span className="text-xs text-muted-foreground">Calculando similaridade com {referenceProperty?.nome}...</span>
                             </div>
                         ) : suggestions.length === 0 ? (
                             <div className="text-center py-8 text-muted-foreground text-sm">
-                                Nenhuma sugestão próxima encontrada na nossa base de dados.
+                                Nenhuma sugestão próxima encontrada na nossa base de dados para este imóvel.
                             </div>
                         ) : (
                             <div className="space-y-3 pb-4">
-                                {suggestions.map((item) => (
-                                    <div key={item.id} className="flex flex-col gap-2 p-3 border rounded-lg hover:bg-muted/30 transition-colors group">
-                                        <div className="flex justify-between items-start">
-                                            <div className="flex-1">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <Badge variant="outline" className={`text-[10px] font-bold h-5 ${(item.matchScore || 0) > 90 ? 'bg-green-50 text-green-700 border-green-200' :
-                                                        (item.matchScore || 0) > 80 ? 'bg-blue-50 text-blue-700 border-blue-200' : ''
-                                                        }`}>
-                                                        {item.matchScore}% Match
-                                                    </Badge>
-                                                    {item.dist_km !== undefined && (
-                                                        <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                                                            <MapPin className="h-3 w-3" /> {item.dist_km.toFixed(1)}km
-                                                        </span>
-                                                    )}
+                                {suggestions.map((item) => {
+                                    const isSelected = selectedIds.includes(item.id_numerica);
+                                    return (
+                                        <div
+                                            key={item.id}
+                                            className={`flex flex-col gap-2 p-3 border rounded-lg transition-colors cursor-pointer ${isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'}`}
+                                            onClick={() => toggleSelection(item.id_numerica)}
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1 flex gap-3">
+                                                    <div className="pt-1">
+                                                        <Checkbox
+                                                            checked={isSelected}
+                                                            onCheckedChange={() => toggleSelection(item.id_numerica)}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <Badge variant="outline" className={`text-[10px] font-bold h-5 ${(item.matchScore || 0) > 90 ? 'bg-green-50 text-green-700 border-green-200' :
+                                                                (item.matchScore || 0) > 80 ? 'bg-blue-50 text-blue-700 border-blue-200' : ''
+                                                                }`}>
+                                                                {item.matchScore}% Match
+                                                            </Badge>
+                                                            {item.dist_km !== undefined && (
+                                                                <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                                                                    <MapPin className="h-3 w-3" /> {item.dist_km.toFixed(1)}km
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <h4 className="font-medium text-sm line-clamp-1" title={item.nome_anuncio}>
+                                                            {item.nome_anuncio}
+                                                        </h4>
+                                                    </div>
                                                 </div>
-                                                <h4 className="font-medium text-sm line-clamp-1" title={item.nome_anuncio}>
-                                                    {item.nome_anuncio}
-                                                </h4>
+                                                <div className="flex items-center gap-1">
+                                                    <a
+                                                        href={item.url_anuncio || `https://www.airbnb.com.br/rooms/${item.id_numerica}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-primary hover:underline flex items-center gap-0.5"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <ExternalLink className="h-3 w-3" />
+                                                        Ver
+                                                    </a>
+                                                </div>
                                             </div>
-                                            <div className="flex items-center gap-1">
-                                                <a
-                                                    href={item.url_anuncio || `https://www.airbnb.com.br/rooms/${item.id_numerica}`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-primary hover:underline flex items-center gap-0.5"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                >
-                                                    <ExternalLink className="h-3 w-3" />
-                                                    Ver
-                                                </a>
-                                                <Button size="sm" className="h-7 text-xs ml-2" onClick={() => handleAdd(item.id_numerica)}>
-                                                    Adicionar
-                                                </Button>
-                                            </div>
-                                        </div>
 
-                                        <div className="flex items-center gap-3 text-xs text-muted-foreground bg-muted/20 p-2 rounded">
-                                            <div className="flex items-center gap-1">
-                                                <Users className="h-3 w-3" />
-                                                {item.hospedes_adultos} guests
-                                            </div>
-                                            <div className="flex items-center gap-1">
-                                                <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                                                {item.media_avaliacao}
-                                            </div>
-                                            <div className="ml-auto font-semibold text-foreground">
-                                                R$ {item.preco_total && item.quantidade_noites ? Math.round(item.preco_total / item.quantidade_noites) : '-'} /noite
+                                            <div className="flex items-center gap-3 text-xs text-muted-foreground bg-muted/20 p-2 rounded ml-7">
+                                                <div className="flex items-center gap-1">
+                                                    <Users className="h-3 w-3" />
+                                                    {item.hospedes_adultos} guests
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                                                    {item.media_avaliacao}
+                                                </div>
+                                                <div className="ml-auto font-semibold text-foreground">
+                                                    R$ {item.preco_total && item.quantidade_noites ? Math.round(item.preco_total / item.quantidade_noites) : '-'} /noite
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    )
+                                })}
                             </div>
                         )}
                     </ScrollArea>
+
+                    {/* Fixed Bottom Action Area */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-background border-t p-3 pr-8 flex items-center justify-between shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                        <span className="text-sm font-medium text-muted-foreground">
+                            {selectedIds.length} selecionado{selectedIds.length !== 1 ? 's' : ''}
+                        </span>
+                        <Button
+                            disabled={selectedIds.length === 0 || loading}
+                            onClick={handleAddSelected}
+                            size="sm"
+                        >
+                            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Adicionar Seleção'}
+                        </Button>
+                    </div>
                 </div>
             </DialogContent>
         </Dialog>
