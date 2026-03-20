@@ -212,25 +212,35 @@ export function AvailabilityCalendar({
                     <Tooltip>
                         <TooltipTrigger asChild>{dayEl}</TooltipTrigger>
                         <TooltipContent side="top" className="bg-white text-blue-700 border border-blue-200 text-[11px] max-w-[280px] p-3 space-y-1.5 shadow-md z-[9999]">
-                            <div>
-                                <p className="font-bold text-[12px]">{resForTooltip.partnername || 'Reserva'} • {resForTooltip.guesttotalcount || 0} hóspedes</p>
-                                <p className="text-blue-600/80 mt-0.5">{cin} → {cout} ({resForTooltip.nightcount} noites)</p>
-                            </div>
-                            <div className="bg-blue-50/50 -mx-3 px-3 py-1.5 border-y border-blue-100/50">
-                                <p className="text-muted-foreground text-[10px] uppercase tracking-wider mb-0.5">Faturamento Total</p>
-                                <p className="font-mono font-bold text-[12px]">R$ {resForTooltip.reservetotal?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            <>
+                                <div>
+                                    <p className="font-bold text-[12px]">{resForTooltip.partnername || 'Reserva'} • {resForTooltip.guesttotalcount || 0} hóspedes</p>
+                                    <p className="text-blue-600/80 mt-0.5">{cin} → {cout} ({resForTooltip.nightcount} noites)</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <div className="flex justify-between items-baseline gap-2">
+                                        <span className="text-blue-900/60 font-medium uppercase tracking-wider text-[9px]">Propriedade</span>
+                                        <span className="text-blue-900 font-bold text-right">{rawUnit.propriedade.nomepropriedade}</span>
+                                    </div>
+                                    <div className="flex justify-between items-baseline gap-2">
+                                        <span className="text-blue-900/60 font-medium uppercase tracking-wider text-[9px]">Faturamento Total</span>
+                                        <span className="font-mono font-bold text-blue-900">R$ {resForTooltip.reservetotal?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                </div>
                                 {proRataText && (
-                                    <p className="font-mono text-[10px] text-blue-600/80 mt-0.5">
+                                    <p className="font-mono text-[10px] text-blue-600/80 mt-1 pl-2 border-l-2 border-blue-100 italic">
                                         ↳ {proRataText}
                                     </p>
                                 )}
                                 {monthShareText && (
                                     <div className="mt-2 pt-2 border-t border-blue-100 border-dashed">
-                                        <p className="text-muted-foreground text-[9px] uppercase tracking-wider mb-0.5">Rateio p/ esta visão (+{validNightsInPeriod} nts)</p>
-                                        <p className="font-mono font-bold text-[11px] text-blue-700">{monthShareText}</p>
+                                        <div className="flex justify-between items-baseline gap-2">
+                                            <span className="text-blue-900/60 font-medium uppercase tracking-wider text-[9px]">Rateio visão (+{validNightsInPeriod} nts)</span>
+                                            <span className="font-mono font-bold text-blue-700">{monthShareText}</span>
+                                        </div>
                                     </div>
                                 )}
-                            </div>
+                            </>
                         </TooltipContent>
                     </Tooltip>
                 </TooltipProvider>

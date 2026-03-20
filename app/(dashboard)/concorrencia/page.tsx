@@ -14,7 +14,9 @@ import { calculateMedian } from '@/lib/competitor-utils'
 import { MapPin, Loader2, ExternalLink, Search, Users, Star, Calendar as CalendarIcon, RefreshCw } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Slider } from '@/components/ui/slider'
 import { InitialLoadingScreen } from '@/components/page-skeleton'
+import { useChartLoading, useAutoCompleteChart } from '@/hooks/use-chart-loading'
 
 const fetcher = (url: string) => fetch(url).then(res => res.json())
 
@@ -52,7 +54,8 @@ export default function ConcorrenciaPage() {
     const [searchQuery, setSearchQuery] = useState<string | null>(null)
 
     const [radius, setRadius] = useState('10')
-    const [guests, setGuests] = useState('1')
+    const [guestsMin, setGuestsMin] = useState(1)
+    const [guestsMax, setGuestsMax] = useState(20)
     const [startDate, setStartDate] = useState<string>('2026-01-01')
     const [endDate, setEndDate] = useState<string>('2026-12-31')
 
@@ -77,10 +80,14 @@ export default function ConcorrenciaPage() {
     // Fetching state
     const [isFirstLoad, setIsFirstLoad] = useState(true)
 
+    // Chart loading tracking
+    const { progress: chartProgress, isLoading: chartsLoading, registerChart, completeChart } = useChartLoading()
+
     const queryParams = useMemo(() => {
         const params = new URLSearchParams({
             radius,
-            guests,
+            guestsMin: guestsMin.toString(),
+            guestsMax: guestsMax.toString(),
             startDate,
             endDate,
             includeStats: 'true',
@@ -96,7 +103,7 @@ export default function ConcorrenciaPage() {
             params.append('location', locationLabel)
         }
         return params.toString()
-    }, [selectedCoords, searchQuery, radius, guests, startDate, endDate, locationLabel])
+    }, [selectedCoords, searchQuery, radius, guestsMin, guestsMax, startDate, endDate, locationLabel])
 
     const { data: result, error: fetchError, isLoading, isValidating, mutate } = useSWR<{ success: boolean, data: Competitor[], stats: ChartData[] }>(
         `/api/competitors?${queryParams}`,
@@ -111,6 +118,16 @@ export default function ConcorrenciaPage() {
     const competitors: Competitor[] = result?.success ? result.data || [] : []
     const stats: ChartData[] = result?.success ? result.stats || [] : []
     const loading = isLoading || (!result && !fetchError)
+
+    // Register charts for loading tracking
+    useEffect(() => {
+        registerChart('competitors-data')
+        registerChart('stats-chart')
+    }, [registerChart])
+
+    // Auto-complete charts when data is ready
+    useAutoCompleteChart('competitors-data', !isLoading && competitors.length >= 0, registerChart, completeChart)
+    useAutoCompleteChart('stats-chart', !isLoading && stats.length >= 0, registerChart, completeChart)
 
     const handleLocationSelect = (loc: { address: string; lat: number; lng: number } | null, text?: string) => {
         if (loc) {
@@ -237,8 +254,8 @@ export default function ConcorrenciaPage() {
         });
     };
 
-    if (isFirstLoad && loading) {
-        return <InitialLoadingScreen />
+    if (isFirstLoad && (loading || chartsLoading)) {
+        return <InitialLoadingScreen externalProgress={chartProgress} onComplete={() => setIsFirstLoad(false)} />
     }
 
     return (
@@ -288,17 +305,22 @@ export default function ConcorrenciaPage() {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-xs font-bold uppercase text-muted-foreground ml-1">Hóspedes min.</label>
-                            <Select value={guests} onValueChange={setGuests}>
-                                <SelectTrigger className="bg-background h-10 border-muted-foreground/20">
-                                    <SelectValue placeholder="Hóspedes" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {[1, 2, 3, 4, 5, 6, 8, 10].map(n => (
-                                        <SelectItem key={n} value={n.toString()}>{n}+ hóspedes</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <label className="text-xs font-bold uppercase text-muted-foreground ml-1">
+                                Hóspedes ({guestsMin} – {guestsMax})
+                            </label>
+                            <div className="bg-background rounded-lg border border-muted-foreground/20 h-10 flex items-center px-3">
+                                <Slider
+                                    min={1}
+                                    max={20}
+                                    step={1}
+                                    value={[guestsMin, guestsMax]}
+                                    onValueChange={([min, max]) => {
+                                        setGuestsMin(min)
+                                        setGuestsMax(max)
+                                    }}
+                                    className="w-full"
+                                />
+                            </div>
                         </div>
 
                         <div className="space-y-2">

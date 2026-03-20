@@ -14,6 +14,7 @@ import { applyGlobalFilters, getFilterOptions } from "@/lib/filter-utils"
 import { useDashboardData } from "@/contexts/dashboard-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { OccupancyHeatmap } from "@/components/occupancy-heatmap"
 
 export default function Dashboard() {
   const { data: rawData, loading, error, source, refetch, isFirstLoad, isValidating } = useDashboardData()
@@ -100,6 +101,14 @@ export default function Dashboard() {
         </div>
         <AnalyticsCharts data={filteredData} globalFilters={filters} />
       </div>
+
+      {/* Occupancy Heatmap */}
+      {filteredData.length > 0 && (
+        <OccupancyHeatmap
+          properties={filteredData}
+          title="Mapa de Ocupação"
+        />
+      )}
 
       <GeminiChat />
     </div>

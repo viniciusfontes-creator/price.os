@@ -5,11 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import {
   BarChart, Bar, XAxis, YAxis, LineChart, Line,
   Tooltip as RechartsTooltip, ResponsiveContainer, Cell,
 } from "recharts"
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react"
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, ExternalLink, Target, TrendingUp, DollarSign } from "lucide-react"
 import {
   addDays, format, isSameDay, parseISO, startOfDay,
   isWithinInterval, subDays, isValid, nextDay, getDay,
@@ -18,12 +20,18 @@ import {
 } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { useState, useMemo } from "react"
+import { useSearchParams } from "next/navigation"
+import { PeerGroupComparison } from "@/components/peer-group-comparison"
 
 const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
 const COLORS_PRACA = ["#1e40af", "#2563eb", "#3b82f6", "#60a5fa", "#93c5fd", "#7dd3fc", "#38bdf8", "#0ea5e9"]
 
 export default function AvailabilityPage() {
   const { data: properties, loading } = useDashboardData()
+  const searchParams = useSearchParams()
+  const urlTab = searchParams.get('tab')
+  const urlPropertyId = searchParams.get('propertyId')
+  const [activeTab, setActiveTab] = useState(urlTab === 'command-center' ? 'command-center' : 'disponibilidade')
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [dialogType, setDialogType] = useState<"weekend" | "gaps" | "expired" | null>(null)
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()))
@@ -242,10 +250,24 @@ export default function AvailabilityPage() {
   return (
     <div className="space-y-5 p-6 max-w-[1400px]">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Disponibilidade</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">{properties.length} unidades</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Disponibilidade</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{properties.length} unidades</p>
+        </div>
       </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="bg-muted/50">
+          <TabsTrigger value="disponibilidade">Disponibilidade</TabsTrigger>
+          <TabsTrigger value="command-center">Central de Comando</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="command-center" className="mt-5">
+          <CommandCenterTab properties={properties} initialPropertyId={urlPropertyId} />
+        </TabsContent>
+
+        <TabsContent value="disponibilidade" className="mt-5 space-y-5">
 
       {/* KPIs */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
@@ -392,6 +414,9 @@ export default function AvailabilityPage() {
         </CardContent>
       </Card>
 
+        </TabsContent>
+      </Tabs>
+
       {/* Dialogs */}
       <Dialog open={!!dialogType} onOpenChange={open => !open && setDialogType(null)}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col gap-0">
@@ -426,6 +451,339 @@ export default function AvailabilityPage() {
           {selectedDate && <DayDetailsSection properties={properties} date={selectedDate} />}
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+// ─── Command Center Tab ──────────────────────────────────────────────────────
+
+function CommandCenterTab({ properties, initialPropertyId }: { properties: any[]; initialPropertyId: string | null }) {
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>(initialPropertyId || '')
+  const [ccMonth, setCcMonth] = useState(() => startOfMonth(new Date()))
+  const today = useMemo(() => startOfDay(new Date()), [])
+
+  const property = useMemo(() =>
+    properties.find(p => p.propriedade.idpropriedade === selectedPropertyId) || null
+  , [properties, selectedPropertyId])
+
+  // Calendar weeks for command center
+  const ccCalendarWeeks = useMemo(() => {
+    const monthStart = startOfMonth(ccMonth)
+    const monthEnd = endOfMonth(ccMonth)
+    const calStart = startOfWeek(monthStart, { weekStartsOn: 1 })
+    const calEnd = endOfWeek(monthEnd, { weekStartsOn: 1 })
+    const days = eachDayOfInterval({ start: calStart, end: calEnd })
+    const weeks: Date[][] = []
+    for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7))
+    return weeks
+  }, [ccMonth])
+
+  // Single-property day data with reservation details
+  const dayDataMap = useMemo(() => {
+    const map: Record<string, { status: string; price: number; reserva?: any; occ?: any }> = {}
+    if (!property) return map
+    ccCalendarWeeks.flat().forEach(date => {
+      const ds = format(date, "yyyy-MM-dd")
+      const occ = property.ocupacao?.find((o: any) => o.datas === ds)
+      let status = "available"
+      let reservaInfo = undefined
+
+      if (occ) {
+        if (occ.ocupado === 1) status = "occupied"
+        else if (occ.manutencao === 1) status = "blocked"
+        else if (occ.ocupado_proprietario === 1) status = "blocked"
+      } else {
+        const reserva = property.reservas?.find((r: any) => {
+          if (!r.checkindate || !r.checkoutdate) return false
+          return isWithinInterval(date, { start: parseISO(r.checkindate), end: subDays(parseISO(r.checkoutdate), 1) })
+        })
+        if (reserva) {
+          status = "occupied"
+          reservaInfo = reserva
+        }
+      }
+
+      // Find tariff for this date
+      const tariff = property.tarifario?.find((t: any) => ds >= t.from && ds <= t.to)
+      const price = tariff ? tariff.baserate : (property.propriedade?.valor_tarifario || 0)
+
+      map[ds] = { status, price, reserva: reservaInfo, occ }
+    })
+    return map
+  }, [property, ccCalendarWeeks])
+
+  // KPI calculations
+  const kpis = useMemo(() => {
+    if (!property) return null
+    const hoje = new Date()
+    const inicioMesStr = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split("T")[0]
+    const fimMesStr = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().split("T")[0]
+    const anoMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`
+
+    // Preço Vitrine (average baserate from tarifario for current month)
+    const monthTariffs = property.tarifario?.filter((t: any) => t.from <= fimMesStr && t.to >= inicioMesStr)
+    const precoVitrine = monthTariffs?.length > 0
+      ? monthTariffs.reduce((sum: number, t: any) => sum + (t.baserate || 0), 0) / monthTariffs.length
+      : property.propriedade?.valor_tarifario || 0
+
+    // Preço sugerido (from pricing intelligence if available)
+    const precoSugerido = property.propriedade?.baserate_atual || precoVitrine
+
+    // Meta checkout
+    const meta = property.metas
+      ?.filter((m: any) => String(m.data_especifica || '').startsWith(anoMes))
+      .reduce((sum: number, m: any) => sum + (m.meta || 0), 0) || 0
+
+    const realizado = property.reservas
+      ?.filter((r: any) => r.checkoutdate >= inicioMesStr && r.checkoutdate <= fimMesStr)
+      .reduce((sum: number, r: any) => sum + r.reservetotal, 0) || 0
+
+    const percentual = meta > 0 ? (realizado / meta) * 100 : 0
+
+    // Occupancy for current month
+    const monthDays = eachDayOfInterval({
+      start: new Date(hoje.getFullYear(), hoje.getMonth(), 1),
+      end: new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0)
+    })
+    let occupiedDays = 0
+    monthDays.forEach(date => {
+      const ds = format(date, "yyyy-MM-dd")
+      const data = dayDataMap[ds]
+      if (data?.status === "occupied") occupiedDays++
+    })
+    const occupancyPct = monthDays.length > 0 ? Math.round((occupiedDays / monthDays.length) * 100) : 0
+
+    return { precoVitrine, precoSugerido, delta: precoSugerido > 0 ? ((precoVitrine - precoSugerido) / precoSugerido * 100) : 0, meta, realizado, percentual, occupancyPct }
+  }, [property, dayDataMap])
+
+  if (properties.length === 0) {
+    return <p className="text-center py-10 text-sm text-muted-foreground">Nenhuma propriedade carregada.</p>
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Property Selector + PMS Link */}
+      <div className="flex items-center gap-3">
+        <Select value={selectedPropertyId} onValueChange={setSelectedPropertyId}>
+          <SelectTrigger className="w-[400px] bg-background">
+            <SelectValue placeholder="Selecione uma unidade..." />
+          </SelectTrigger>
+          <SelectContent>
+            {properties.map((p: any) => (
+              <SelectItem key={p.propriedade.idpropriedade} value={p.propriedade.idpropriedade}>
+                {p.propriedade.nomepropriedade}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {property?.propriedade?.sub_grupo && (
+          <a
+            href={`https://beto.stays.com.br/i/apartment/${property.propriedade.sub_grupo}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-xs text-primary hover:underline shrink-0"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Abrir no PMS Stays
+          </a>
+        )}
+      </div>
+
+      {!selectedPropertyId ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-2">
+          <Target className="h-10 w-10 text-muted-foreground/30" />
+          <p className="text-sm text-muted-foreground">Selecione uma unidade para ver a Central de Comando</p>
+        </div>
+      ) : property && kpis ? (
+        <>
+          {/* KPI Cards */}
+          <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+            <Card className="border-0 shadow-sm">
+              <CardContent className="pt-5 pb-4 px-5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Preço Vitrine</p>
+                <p className="text-2xl font-semibold mt-1">R$ {kpis.precoVitrine.toFixed(0)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Tarifário atual</p>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-sm">
+              <CardContent className="pt-5 pb-4 px-5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Variação Sugerida</p>
+                <p className={`text-2xl font-semibold mt-1 ${Math.abs(kpis.delta) < 10 ? "text-emerald-600" : "text-red-600"}`}>
+                  {kpis.delta > 0 ? "+" : ""}{kpis.delta.toFixed(1)}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">Atual vs. recomendado</p>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-sm">
+              <CardContent className="pt-5 pb-4 px-5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Meta Checkout</p>
+                <p className="text-2xl font-semibold mt-1">{kpis.percentual.toFixed(1)}%</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  R$ {kpis.realizado.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} / R$ {kpis.meta.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-sm">
+              <CardContent className="pt-5 pb-4 px-5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Ocupação do Mês</p>
+                <p className={`text-2xl font-semibold mt-1 ${kpis.occupancyPct >= 70 ? "text-emerald-600" : kpis.occupancyPct >= 40 ? "text-amber-600" : "text-red-600"}`}>
+                  {kpis.occupancyPct}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">{format(ccMonth, "MMMM", { locale: ptBR })}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Peer Group Comparison */}
+          {property && (
+            <div className="mt-6">
+              <PeerGroupComparison
+                currentProperty={property}
+                allProperties={properties}
+                yearMonth={format(ccMonth, 'yyyy-MM')}
+              />
+            </div>
+          )}
+
+          {/* Calendar with prices */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <button onClick={() => setCcMonth(m => subMonths(m, 1))} className="p-1.5 rounded-md hover:bg-muted transition-colors">
+                  <ChevronLeft className="h-5 w-5 text-muted-foreground" />
+                </button>
+                <CardTitle className="text-base font-semibold capitalize">
+                  {format(ccMonth, "MMMM yyyy", { locale: ptBR })}
+                </CardTitle>
+                <button onClick={() => setCcMonth(m => addMonths(m, 1))} className="p-1.5 rounded-md hover:bg-muted transition-colors">
+                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                </button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <TooltipProvider>
+                <div className="grid grid-cols-7 gap-1.5 mb-1.5">
+                  {["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map(d => (
+                    <div key={d} className="text-center text-[11px] font-medium text-muted-foreground py-1">{d}</div>
+                  ))}
+                </div>
+                <div className="space-y-1.5">
+                  {ccCalendarWeeks.map((week, wi) => (
+                    <div key={wi} className="grid grid-cols-7 gap-1.5">
+                      {week.map(date => {
+                        const ds = format(date, "yyyy-MM-dd")
+                        const data = dayDataMap[ds]
+                        const inMonth = isSameMonth(date, ccMonth)
+                        const isToday = isSameDay(date, today)
+                        const statusBg = !inMonth ? "" :
+                          data?.status === "occupied" ? "bg-red-50" :
+                          data?.status === "blocked" ? "bg-slate-100" :
+                          "bg-emerald-50"
+
+                        const dayContent = (
+                          <div
+                            className={`relative flex flex-col items-center justify-center rounded-lg py-2 px-1 transition-all
+                              ${inMonth ? "" : "opacity-25 pointer-events-none"}
+                              ${isToday ? "ring-2 ring-primary" : ""}
+                              ${statusBg}
+                            `}
+                          >
+                            <span className={`text-xs font-medium ${isToday ? "text-primary" : inMonth ? "text-foreground" : "text-muted-foreground"}`}>
+                              {format(date, "d")}
+                            </span>
+                            {inMonth && data && (
+                              <>
+                                <span className={`text-[9px] font-semibold leading-tight mt-0.5 ${
+                                  data.status === "occupied" ? "text-red-600" :
+                                  data.status === "blocked" ? "text-slate-500" :
+                                  "text-emerald-700"
+                                }`}>
+                                  {data.status === "occupied" ? "Ocupado" : data.status === "blocked" ? "Bloq." : "Livre"}
+                                </span>
+                                {data.price > 0 && data.status !== "occupied" && (
+                                  <span className="text-[9px] text-muted-foreground font-mono leading-tight">
+                                    R${data.price.toFixed(0)}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )
+
+                        // Render with tooltip only for occupied/blocked days
+                        if (inMonth && data && (data.status === "occupied" || data.status === "blocked")) {
+                          return (
+                            <Tooltip key={ds}>
+                              <TooltipTrigger asChild>
+                                {dayContent}
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-xs">
+                                <div className="space-y-1">
+                                  <div className="font-semibold text-xs">
+                                    {format(date, "dd/MM/yyyy", { locale: ptBR })}
+                                  </div>
+                                  {data.status === "occupied" && data.reserva && (
+                                    <>
+                                      <div className="text-xs">
+                                        <span className="text-muted-foreground">Reserva:</span> {data.reserva.idReserva || 'N/A'}
+                                      </div>
+                                      <div className="text-xs">
+                                        <span className="text-muted-foreground">Check-in:</span> {format(parseISO(data.reserva.checkindate), "dd/MM/yyyy")}
+                                      </div>
+                                      <div className="text-xs">
+                                        <span className="text-muted-foreground">Check-out:</span> {format(parseISO(data.reserva.checkoutdate), "dd/MM/yyyy")}
+                                      </div>
+                                      <div className="text-xs">
+                                        <span className="text-muted-foreground">Noites:</span> {data.reserva.nightcount || 'N/A'}
+                                      </div>
+                                      <div className="text-xs">
+                                        <span className="text-muted-foreground">Total:</span> R$ {data.reserva.reservetotal?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}
+                                      </div>
+                                      <div className="text-xs">
+                                        <span className="text-muted-foreground">Canal:</span> {data.reserva.partnername || 'N/A'}
+                                      </div>
+                                      {data.reserva.creationdate && (
+                                        <div className="text-xs">
+                                          <span className="text-muted-foreground">Antecedência:</span> {Math.floor((parseISO(data.reserva.checkindate).getTime() - parseISO(data.reserva.creationdate).getTime()) / (1000 * 60 * 60 * 24))} dias
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                  {data.status === "blocked" && data.occ && (
+                                    <>
+                                      {data.occ.ocupado_proprietario === 1 && (
+                                        <div className="text-xs">Uso do proprietário</div>
+                                      )}
+                                      {data.occ.manutencao === 1 && (
+                                        <div className="text-xs">Manutenção</div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          )
+                        }
+
+                        return <div key={ds}>{dayContent}</div>
+                      })}
+                    </div>
+                  ))}
+                </div>
+                {/* Legend */}
+                <div className="flex items-center justify-center gap-4 mt-4 text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-50 border border-emerald-200" /> Livre</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-50 border border-red-200" /> Ocupado</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-100 border border-slate-200" /> Bloqueado</span>
+                </div>
+              </TooltipProvider>
+            </CardContent>
+          </Card>
+        </>
+      ) : (
+        <p className="text-center py-10 text-sm text-muted-foreground">Propriedade não encontrada.</p>
+      )}
     </div>
   )
 }

@@ -8,7 +8,8 @@ export async function GET(request: Request) {
         const lat = searchParams.get('lat')
         const lon = searchParams.get('lon')
         const radius = parseFloat(searchParams.get('radius') || '10') // radius in KM
-        const guests = parseInt(searchParams.get('guests') || '1')
+        const guestsMin = parseInt(searchParams.get('guestsMin') || searchParams.get('guests') || '1')
+        const guestsMax = parseInt(searchParams.get('guestsMax') || '999')
         const startDate = searchParams.get('startDate')
         const endDate = searchParams.get('endDate')
         const limit = parseInt(searchParams.get('limit') || '500')
@@ -24,17 +25,64 @@ export async function GET(request: Request) {
             const latitude = parseFloat(lat)
             const longitude = parseFloat(lon)
 
+            console.log('[API] Calling RPC buscar_anuncios_geo_v2 with params:', {
+                latitude,
+                longitude,
+                radius,
+                guestsMin,
+                startDate,
+                endDate
+            })
+
             const { data: rpcData, error: rpcError } = await supabase.rpc('buscar_anuncios_geo_v2', {
                 p_latitude: latitude,
                 p_longitude: longitude,
                 p_raio_km: radius,
-                p_hospedes: guests,
+                p_hospedes: guestsMin,
                 p_start_date: startDate || null,
-                p_end_date: endDate || null
+                p_end_date: endDate || null,
+                p_limit: limit,
+                p_offset: offset
             })
+
+            if (rpcError) {
+                console.error('[API] RPC Error:', {
+                    message: rpcError.message,
+                    details: rpcError.details,
+                    hint: rpcError.hint,
+                    code: rpcError.code
+                })
+            }
 
             data = rpcData
             error = rpcError
+            
+            // Flatten new JSON representation if historico exists
+            if (data && data.length > 0 && data[0].historico !== undefined) {
+                const flatData: any[] = []
+                data.forEach((p: any) => {
+                    const { historico, ...propInfo } = p
+                    if (Array.isArray(historico)) {
+                        historico.forEach((h: any) => {
+                            flatData.push({ ...propInfo, ...h })
+                        })
+                    } else if (historico) {
+                         // Fallback just in case PostgREST returns stringified JSON
+                         try {
+                             const parseh = typeof historico === 'string' ? JSON.parse(historico) : []
+                             parseh.forEach((h: any) => {
+                                flatData.push({ ...propInfo, ...h })
+                            })
+                         } catch (e) {}
+                    }
+                })
+                data = flatData
+            }
+
+            // Apply max guest filter client-side (RPC only supports min)
+            if (data && guestsMax < 999) {
+                data = data.filter((item: any) => (item.hospedes_adultos || 0) <= guestsMax)
+            }
             count = rpcData?.length || 0
         } else {
             // Fallback to traditional query
@@ -66,6 +114,12 @@ export async function GET(request: Request) {
             }
             if (endDate) {
                 query = query.lte('checkin_formatado', endDate)
+            }
+            if (guestsMin > 1) {
+                query = query.gte('hospedes_adultos', guestsMin)
+            }
+            if (guestsMax < 999) {
+                query = query.lte('hospedes_adultos', guestsMax)
             }
 
             const { data: selectData, error: selectError, count: selectCount } = await query.range(offset, offset + limit - 1)
@@ -211,12 +265,22 @@ export async function GET(request: Request) {
         }))
     } catch (error) {
         console.error('[API] Error fetching competitors from Supabase:', error)
-        return NextResponse.json({
+
+        // Provide more detailed error information
+        const errorDetails: any = {
             success: false,
-            error: 'Failed',
-            details: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined
-        }, { status: 500 })
+            error: 'Failed to fetch competitors',
+            message: error instanceof Error ? error.message : String(error)
+        }
+
+        // Add Supabase-specific error details if available
+        if (error && typeof error === 'object' && 'code' in error) {
+            errorDetails.code = (error as any).code
+            errorDetails.details = (error as any).details
+            errorDetails.hint = (error as any).hint
+        }
+
+        return NextResponse.json(errorDetails, { status: 500 })
     }
 }
 

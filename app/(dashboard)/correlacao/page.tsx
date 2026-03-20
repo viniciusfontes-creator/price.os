@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Loader2, Search, MapPin, Target, Calendar as CalendarIcon, TrendingUp, Filter, History, ChevronDown, Info, Plus, ExternalLink, Trash, RefreshCw, Pencil, Users, Home, X, SlidersHorizontal, Building2 } from 'lucide-react';
 import { useToast } from "@/components/ui/use-toast";
 import { InitialLoadingScreen } from '@/components/page-skeleton';
+import { useChartLoading, useAutoCompleteChart } from '@/hooks/use-chart-loading';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
 import {
@@ -172,6 +173,9 @@ export default function MarketMonitorPage() {
     });
 
     const { toast } = useToast();
+
+    // Chart loading tracking
+    const { progress: chartProgress, isLoading: chartsLoading, registerChart, completeChart } = useChartLoading();
 
     // Load Properties (for dialogs)
     useEffect(() => {
@@ -356,6 +360,16 @@ export default function MarketMonitorPage() {
             };
         });
     }, [chartData]);
+
+    // Register charts for loading tracking
+    useEffect(() => {
+        registerChart('basket-data');
+        registerChart('chart-evolution');
+    }, [registerChart]);
+
+    // Auto-complete charts when data is ready
+    useAutoCompleteChart('basket-data', !basketsLoading && activeBaskets.length >= 0, registerChart, completeChart);
+    useAutoCompleteChart('chart-evolution', chartData.length > 0 || (!selectedBasket), registerChart, completeChart);
 
     const competitorMap = useMemo(() => {
         const map: Record<string, string> = {};
@@ -574,8 +588,8 @@ export default function MarketMonitorPage() {
     // Count active filters
     const activeFiltersCount = [filterPropertyId !== 'all', filterGuestCapacity !== 'all'].filter(Boolean).length;
 
-    if (isFirstLoad && basketsLoading) {
-        return <InitialLoadingScreen />;
+    if (isFirstLoad && (basketsLoading || chartsLoading)) {
+        return <InitialLoadingScreen externalProgress={chartProgress} onComplete={() => setIsFirstLoad(false)} />;
     }
 
     return (
@@ -849,6 +863,7 @@ export default function MarketMonitorPage() {
                                             </Badge>
                                             <BasketDetailsDialog
                                                 basketName={`Concorrentes: ${selectedBasket.name}`}
+                                                basketId={selectedBasket.id}
                                                 items={selectedBasket.basket_items?.filter(i => i.item_type === 'external') || []}
                                                 onRefresh={() => mutateBaskets()}
                                                 onDeleteItem={async (airbnbId, basketItemId) => {

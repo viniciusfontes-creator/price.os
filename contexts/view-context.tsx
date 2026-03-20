@@ -27,7 +27,7 @@ export const VIEW_CONFIGS: Record<ViewType, ViewConfig> = {
         icon: '🏢',
         color: '#4f46e5',
         gradient: 'from-indigo-500 to-blue-600',
-        allowedPages: ['/', '/vendas', '/inventory/availability'],
+        allowedPages: ['/', '/dashboard', '/vendas', '/inventory/availability'],
         bigqueryFilter: null, // No filter — consolidated view
     },
     'short-stay': {
@@ -38,7 +38,7 @@ export const VIEW_CONFIGS: Record<ViewType, ViewConfig> = {
         color: '#0284c7',
         gradient: 'from-sky-500 to-blue-600',
         allowedPages: [
-            '/', '/vendas', '/inventory/availability',
+            '/', '/dashboard', '/vendas', '/inventory/availability',
             '/pricing', '/propriedades', '/propriedades/pricing', '/propriedades/custos', '/propriedades/racionalizacao',
             '/sales-demand', '/concorrencia', '/correlacao',
         ],
@@ -52,7 +52,7 @@ export const VIEW_CONFIGS: Record<ViewType, ViewConfig> = {
         color: '#2563eb',
         gradient: 'from-blue-600 to-indigo-700',
         allowedPages: [
-            '/', '/vendas', '/inventory/availability',
+            '/', '/dashboard', '/vendas', '/inventory/availability',
             '/propriedades', '/propriedades/pricing', '/propriedades/custos', '/propriedades/racionalizacao',
             '/sales-demand',
         ],

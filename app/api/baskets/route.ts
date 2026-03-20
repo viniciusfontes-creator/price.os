@@ -86,32 +86,23 @@ export async function GET(request: Request) {
 
         // 3. Fetch external competitor data (Airbnb listings)
         if (allExternalIds.length > 0 && withHistory) {
-            // Build URL patterns for search (e.g., '%rooms/1234567%')
-            // We use OR filtering since Supabase doesn't support regex well
-            // For efficiency, fetch all matching URLs and filter in memory
+            // NEW BATCHED QUERY: Fetch all history in one go using the indexed id_numerica column
+            // This prevents timeouts and is much more efficient than N parallel queries
+            const { data: allHistoryData, error: historyError } = await supabase
+                .from('airbnb_extrações')
+                .select('*')
+                .in('id_numerica', allExternalIds)
+                .order('data_extracao', { ascending: false });
 
-            const urlPatterns = allExternalIds.map(id => `%rooms/${id}%`);
+            if (historyError) {
+                console.error('[API] Error fetching history:', historyError);
+            }
 
-            // For precision-safe matching, use first 15 digits of the ID
-            // JavaScript can only safely represent integers up to 2^53 - 1 (about 16 digits)
-            // Airbnb IDs have 19 digits, so we use partial matching with the safe portion
-            const historyPromises = allExternalIds.map(id => {
-                // Use first 15 digits for safe partial matching
-                const safePartialId = id.toString().substring(0, 15);
-                return supabase
-                    .from('airbnb_extrações')
-                    .select('*')
-                    .ilike('url_anuncio', `%rooms/${safePartialId}%`)
-                    .order('data_extracao', { ascending: false });
-            });
+            const allHistory = allHistoryData || [];
 
-            const historyResults = await Promise.all(historyPromises);
-
-            // Flatten all results
-            const allHistory: any[] = [];
-            historyResults.forEach(result => {
-                if (result.data) allHistory.push(...result.data);
-            });
+            // FALLBACK: If some IDs were not found by numeric ID (e.g. legacy data with precision issues),
+            // we could perform a URL search, but with 433k rows, it's safer to rely on the index.
+            // For now, the 'id_numerica' index will handle the vast majority of cases instantly.
 
             // Map data back to baskets
             baskets.forEach((basket: any) => {

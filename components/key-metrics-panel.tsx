@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { TrendingUp, Target, DollarSign, Trophy } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { TrendingUp, Target, DollarSign, Trophy, ExternalLink } from "lucide-react"
 import { SalesDetailModal } from "./sales-detail-modal"
 
 interface KeyMetrics {
@@ -29,6 +30,8 @@ interface MetricDetailModalProps {
 }
 
 function MetricDetailModal({ isOpen, onClose, type, data }: MetricDetailModalProps) {
+  const router = useRouter()
+  const [activeStatusFilter, setActiveStatusFilter] = useState<string | null>(null)
   if (!isOpen) return null
 
   const renderContent = () => {
@@ -138,16 +141,20 @@ function MetricDetailModal({ isOpen, onClose, type, data }: MetricDetailModalPro
           </div>
         )
 
-      case "meta-mes-checkout":
+      case "meta-mes-checkout": {
+        const filteredUnidades = activeStatusFilter
+          ? data?.unidades?.filter((u: any) => u.status === activeStatusFilter)
+          : data?.unidades
         return (
           <div>
             <h3 className="text-lg font-semibold mb-4 text-foreground">Meta do Mês - Data de Checkout</h3>
-            <p className="text-sm text-muted-foreground mb-4">Lista de percentual atingido das unidades com lógica de status</p>
+            <p className="text-sm text-muted-foreground mb-4">Clique em uma unidade para abrir a Central de Comando</p>
 
-            {/* Status Count */}
+            {/* Status Count - Clickable Filters */}
             <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 sm:gap-4 mb-6">
               {["A", "B", "C", "D", "E"].map((status) => {
                 const count = data?.statusCount?.[status] || 0
+                const isActive = activeStatusFilter === status
                 const colors = {
                   A: "bg-green-100 border-green-200 text-green-700",
                   B: "bg-blue-100 border-blue-200 text-blue-700",
@@ -156,7 +163,11 @@ function MetricDetailModal({ isOpen, onClose, type, data }: MetricDetailModalPro
                   E: "bg-red-100 border-red-200 text-red-700",
                 }
                 return (
-                  <div key={status} className={`p-2 sm:p-4 rounded-lg border-2 ${colors[status as keyof typeof colors]}`}>
+                  <div
+                    key={status}
+                    onClick={() => setActiveStatusFilter(isActive ? null : status)}
+                    className={`p-2 sm:p-4 rounded-lg border-2 cursor-pointer transition-all ${colors[status as keyof typeof colors]} ${isActive ? "ring-2 ring-primary ring-offset-1 scale-105" : "hover:scale-[1.02] opacity-80 hover:opacity-100"}`}
+                  >
                     <p className="text-xs sm:text-sm font-medium">Status {status}</p>
                     <p className="text-lg sm:text-2xl font-bold">{count}</p>
                     <p className="text-[10px] sm:text-xs">unidades</p>
@@ -165,15 +176,41 @@ function MetricDetailModal({ isOpen, onClose, type, data }: MetricDetailModalPro
               })}
             </div>
 
+            {activeStatusFilter && (
+              <button
+                onClick={() => setActiveStatusFilter(null)}
+                className="text-xs text-primary hover:underline mb-3 block"
+              >
+                Limpar filtro (mostrando {filteredUnidades?.length || 0} de {data?.unidades?.length || 0})
+              </button>
+            )}
+
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              {data?.unidades?.map((unidade: any, index: number) => (
+              {filteredUnidades?.map((unidade: any, index: number) => (
                 <div
                   key={index}
-                  className={`p-4 rounded-lg border-2 ${unidade.percentual >= 100 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+                  className={`p-4 rounded-lg border-2 cursor-pointer transition-all hover:shadow-md ${unidade.percentual >= 100 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
                     }`}
+                  onClick={() => {
+                    onClose()
+                    router.push(`/inventory/availability?tab=command-center&propertyId=${unidade.idpropriedade}`)
+                  }}
                 >
                   <div className="flex justify-between items-start mb-2">
-                    <h5 className="font-semibold text-foreground">{unidade.nome}</h5>
+                    <div className="flex items-center gap-2">
+                      <h5 className="font-semibold text-foreground">{unidade.nome}</h5>
+                      {unidade.sub_grupo && (
+                        <a
+                          href={`https://beto.stays.com.br/i/apartment/${unidade.sub_grupo}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-muted-foreground hover:text-primary transition-colors"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-bold ${unidade.status === "A"
@@ -213,6 +250,7 @@ function MetricDetailModal({ isOpen, onClose, type, data }: MetricDetailModalPro
             </div>
           </div>
         )
+      }
 
       case "meta-semana-checkout":
         return (
@@ -463,6 +501,8 @@ export function KeyMetricsPanel({ data }: KeyMetricsPanelProps) {
 
           return {
             nome: item.propriedade.nomepropriedade,
+            idpropriedade: item.propriedade.idpropriedade,
+            sub_grupo: item.propriedade.sub_grupo,
             meta,
             realizado,
             percentual,

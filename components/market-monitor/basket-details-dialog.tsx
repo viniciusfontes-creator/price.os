@@ -9,21 +9,26 @@ import {
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { History, ExternalLink, Trash, RefreshCw } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { History, ExternalLink, Trash, RefreshCw, Plus, Link, Check, Clock } from "lucide-react"
 import { CompetitorDetailsDialog } from '@/components/market-monitor/competitor-details-dialog';
 
 interface BasketDetailsDialogProps {
     basketName: string;
+    basketId?: number | string;
     items: any[];
     trigger?: React.ReactNode;
     onDeleteItem?: (id: string, basketItemId: string) => Promise<void>;
     onRefresh?: () => void;
 }
 
-export function BasketDetailsDialog({ basketName, items, trigger, onDeleteItem, onRefresh }: BasketDetailsDialogProps) {
+export function BasketDetailsDialog({ basketName, basketId, items, trigger, onDeleteItem, onRefresh }: BasketDetailsDialogProps) {
 
     const [loadingScraper, setLoadingScraper] = React.useState(false);
     const [countdown, setCountdown] = React.useState(0);
+    const [urlInput, setUrlInput] = React.useState('');
+    const [urlLoading, setUrlLoading] = React.useState(false);
+    const [urlFeedback, setUrlFeedback] = React.useState<{ type: 'success' | 'matched' | 'error'; message: string } | null>(null);
 
     return (
         <Dialog>
@@ -105,6 +110,104 @@ export function BasketDetailsDialog({ basketName, items, trigger, onDeleteItem, 
                         </Button>
                     </DialogTitle>
                 </DialogHeader>
+
+                {basketId && (
+                    <div className="mt-4 p-3 border rounded-lg bg-muted/20 space-y-2">
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Adicionar concorrente por URL</label>
+                        <div className="flex gap-2">
+                            <div className="relative flex-1">
+                                <Link className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    placeholder="https://www.airbnb.com/rooms/..."
+                                    value={urlInput}
+                                    onChange={(e) => { setUrlInput(e.target.value); setUrlFeedback(null); }}
+                                    className="pl-8 h-9 text-sm"
+                                    disabled={urlLoading}
+                                />
+                            </div>
+                            <Button
+                                size="sm"
+                                className="h-9 gap-1.5"
+                                disabled={urlLoading || !urlInput.trim()}
+                                onClick={async () => {
+                                    setUrlLoading(true);
+                                    setUrlFeedback(null);
+                                    try {
+                                        const res = await fetch('/api/competitors/add-url', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ url: urlInput.trim(), basket_id: basketId })
+                                        });
+                                        const data = await res.json();
+                                        if (data.success) {
+                                            setUrlFeedback({
+                                                type: data.matched ? 'matched' : 'success',
+                                                message: data.matched
+                                                    ? 'Encontrado nos dados - adicionado!'
+                                                    : 'Adicionado! Será extraído em breve.'
+                                            });
+                                            setUrlInput('');
+                                            onRefresh?.();
+                                        } else if (data.error === 'exists_in_other_basket' && data.canReuse) {
+                                            // URL exists in another basket - offer reuse
+                                            const confirmReuse = confirm(
+                                                `Este concorrente já está na cesta "${data.existingBasket?.name}".\n\n` +
+                                                `Deseja reutilizar os dados existentes nesta cesta? (Não será necessário novo scraping)`
+                                            );
+                                            if (confirmReuse) {
+                                                // Call reuse endpoint
+                                                const reuseRes = await fetch('/api/competitors/reuse-url', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({
+                                                        airbnb_listing_id: data.airbnb_id,
+                                                        basket_id: basketId
+                                                    })
+                                                });
+                                                const reuseData = await reuseRes.json();
+                                                if (reuseData.success) {
+                                                    setUrlFeedback({
+                                                        type: 'matched',
+                                                        message: `Reutilizado com sucesso! ${reuseData.listingName || ''}`
+                                                    });
+                                                    setUrlInput('');
+                                                    onRefresh?.();
+                                                } else {
+                                                    setUrlFeedback({ type: 'error', message: reuseData.error || 'Erro ao reutilizar' });
+                                                }
+                                            } else {
+                                                setUrlFeedback({
+                                                    type: 'error',
+                                                    message: `Já existe em "${data.existingBasket?.name}"`
+                                                });
+                                            }
+                                        } else {
+                                            setUrlFeedback({ type: 'error', message: data.error || 'Erro ao adicionar' });
+                                        }
+                                    } catch (err) {
+                                        console.error('Error adding URL:', err);
+                                        setUrlFeedback({ type: 'error', message: 'Erro de conexão' });
+                                    } finally {
+                                        setUrlLoading(false);
+                                    }
+                                }}
+                            >
+                                <Plus className="h-3.5 w-3.5" />
+                                Adicionar
+                            </Button>
+                        </div>
+                        {urlFeedback && (
+                            <div className={`flex items-center gap-1.5 text-xs font-medium ${
+                                urlFeedback.type === 'error' ? 'text-red-600' :
+                                urlFeedback.type === 'matched' ? 'text-green-600' : 'text-amber-600'
+                            }`}>
+                                {urlFeedback.type === 'matched' ? <Check className="h-3.5 w-3.5" /> :
+                                 urlFeedback.type === 'success' ? <Clock className="h-3.5 w-3.5" /> : null}
+                                {urlFeedback.message}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 <div className="flex-1 overflow-hidden mt-4">
                     <ScrollArea className="h-[500px] pr-4">

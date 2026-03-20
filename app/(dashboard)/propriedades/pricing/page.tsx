@@ -122,6 +122,11 @@ export default function PricingPage() {
   const [detailUnitId, setDetailUnitId] = useState<string | null>(null)
   const [peerMode, setPeerMode] = useState<"seasonality" | "grupo">("seasonality")
   const [saving, setSaving] = useState(false)
+  const [reservasDialogData, setReservasDialogData] = useState<{
+    reservas: any[]
+    title: string
+    subtitle: string
+  } | null>(null)
 
   // Simulator
   const [simUnitId, setSimUnitId] = useState("")
@@ -534,58 +539,84 @@ export default function PricingPage() {
     const selectedPeriod = periods.find(p => p.id === selectedPeriodId)
     if (!selectedPeriod) return []
 
-    // Previous year equivalent period
-    const prevYearStart = selectedPeriod.startDate.replace(/^\d{4}/, (y) => String(Number(y) - 1))
-    const prevYearEnd = selectedPeriod.endDate.replace(/^\d{4}/, (y) => String(Number(y) - 1))
+    const periodStart = selectedPeriod.startDate
+    const periodEnd = selectedPeriod.endDate
+    const myMaxGuests = detailUnit.propriedade._i_maxguests ?? null
+    const myGrupo = detailUnit.propriedade.grupo_nome
+    const myPraca = detailUnit.propriedade.praca
+
+    // Helper: check if two properties share similar tipology (±1 maxguests)
+    // Both must have valid _i_maxguests for comparison
+    const isSameTypology = (guestsA: number | null | undefined, guestsB: number | null | undefined) => {
+      if (guestsA == null || guestsB == null) return false
+      return Math.abs(guestsA - guestsB) <= 1
+    }
 
     // Determine peers based on mode
     let peerProperties: typeof rawData
     if (peerMode === "seasonality") {
-      if (selectedSeasonality) {
-        const pracasSet = new Set(selectedSeasonality.pracas)
-        peerProperties = rawData.filter(d => pracasSet.has(d.propriedade.praca || ""))
-      } else {
-        const myPraca = detailUnit.propriedade.praca
-        peerProperties = rawData.filter(d => d.propriedade.praca === myPraca)
-      }
+      // Nível Máximo: same tipologia (±1 maxguests) AND same grupo
+      peerProperties = rawData.filter(d => {
+        const sameTypo = isSameTypology(d.propriedade._i_maxguests, myMaxGuests)
+        return sameTypo && d.propriedade.grupo_nome === myGrupo
+      })
     } else {
-      const myGrupo = detailUnit.propriedade.grupo_nome
-      peerProperties = rawData.filter(d => d.propriedade.grupo_nome === myGrupo)
+      // Nível Médio: same tipologia (±1 maxguests) AND same praça, OR only same grupo
+      peerProperties = rawData.filter(d => {
+        const sameTypo = isSameTypology(d.propriedade._i_maxguests, myMaxGuests)
+        const samePraca = d.propriedade.praca === myPraca
+        const sameGrupo = d.propriedade.grupo_nome === myGrupo
+        return (sameTypo && samePraca) || sameGrupo
+      })
     }
 
-    // Calculate metrics from previous year reservas
+    // Calculate period days for occupancy
+    const periodDays = Math.max(1, Math.ceil((new Date(periodEnd).getTime() - new Date(periodStart).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+
+    // Calculate metrics for current period (checkout-based)
     const peerData = peerProperties.map(item => {
-      const periodReservas = item.reservas.filter(r =>
-        r.checkindate >= prevYearStart && r.checkindate <= prevYearEnd
+      // Valor Vendido (reservetotal where checkout in period)
+      const periodReservas = item.reservas.filter((r: any) =>
+        r.checkoutdate >= periodStart && r.checkoutdate <= periodEnd
       )
+      const valorVendido = periodReservas.reduce((sum: number, r: any) => sum + (r.reservetotal || 0), 0)
 
-      const avgPricePerNight = periodReservas.length > 0
-        ? periodReservas.reduce((sum, r) => sum + r.pricepernight, 0) / periodReservas.length
-        : 0
+      // Tarifário Trabalhado (using metricas.precoMedioNoite for consistency with "Tarifário Atual")
+      const tarifarioTrabalhado = item.metricas?.precoMedioNoite || item.propriedade.valor_tarifario || (item.propriedade as any).baserate_atual || 0
 
-      const avgRAC = periodReservas.length > 0
-        ? periodReservas.reduce((sum, r) => sum + r.antecedencia_reserva, 0) / periodReservas.length
-        : 0
+      // Meta (checkout-based for this month)
+      const periodMonth = selectedPeriod.startDate.slice(0, 7)
+      const meta = item.metas
+        ?.filter((m: any) => String(m.data_especifica || '').startsWith(periodMonth))
+        .reduce((sum: number, m: any) => sum + (m.meta || 0), 0) || 0
 
-      const avgGuests = periodReservas.length > 0
-        ? periodReservas.reduce((sum, r) => sum + r.guesttotalcount, 0) / periodReservas.length
-        : 0
+      const percentualMeta = meta > 0 ? (valorVendido / meta) * 100 : 0
+
+      // Ocupação no período (replacing RAC)
+      let occupiedDays = 0
+      if (item.ocupacao?.length > 0) {
+        occupiedDays = item.ocupacao.filter((o: any) =>
+          o.datas >= periodStart && o.datas <= periodEnd && o.ocupado === 1
+        ).length
+      }
+      const occupancyPct = Math.round((occupiedDays / periodDays) * 100)
 
       return {
         unitId: item.propriedade.idpropriedade,
         unitName: item.propriedade.nomepropriedade,
         rooms: item.propriedade._i_rooms || 0,
         maxGuests: item.propriedade._i_maxguests || 0,
-        avgPricePerNight: Math.round(avgPricePerNight),
-        avgRAC: Math.round(avgRAC),
-        avgGuests: Number(avgGuests.toFixed(1)),
+        tarifarioTrabalhado: Math.round(tarifarioTrabalhado),
+        valorVendido: Math.round(valorVendido),
+        percentualMeta: Number(percentualMeta.toFixed(1)),
+        occupancyPct,
         reservaCount: periodReservas.length,
         isSelected: item.propriedade.idpropriedade === detailUnitId,
       }
     })
 
-    // Sort by price desc, ensure selected unit is always included
-    const sorted = peerData.sort((a, b) => b.avgPricePerNight - a.avgPricePerNight)
+    // Sort by valorVendido desc, ensure selected unit is always included
+    const sorted = peerData.sort((a, b) => b.valorVendido - a.valorVendido)
     const top15 = sorted.slice(0, 15)
     const selectedInTop = top15.some(p => p.isSelected)
     if (!selectedInTop) {
@@ -593,7 +624,56 @@ export default function PricingPage() {
       if (selectedPeer) return [...top15.slice(0, 14), selectedPeer]
     }
     return top15
-  }, [detailUnit, detailUnitId, rawData, selectedSeasonality, peerMode, periods, selectedPeriodId])
+  }, [detailUnit, detailUnitId, rawData, peerMode, periods, selectedPeriodId])
+
+  // Historical comparison (year-over-year)
+  const historicalComparison = useMemo(() => {
+    if (!detailUnit || !detailUnitId) return null
+    const selectedPeriod = periods.find(p => p.id === selectedPeriodId)
+    if (!selectedPeriod) return null
+
+    const periodStart = selectedPeriod.startDate
+    const periodEnd = selectedPeriod.endDate
+    const prevYearStart = periodStart.replace(/^\d{4}/, (y) => String(Number(y) - 1))
+    const prevYearEnd = periodEnd.replace(/^\d{4}/, (y) => String(Number(y) - 1))
+    const periodMonth = selectedPeriod.startDate.slice(0, 7)
+    const prevPeriodMonth = prevYearStart.slice(0, 7)
+
+    // Current year
+    const currentReservas = detailUnit.reservas.filter((r: any) =>
+      r.checkoutdate >= periodStart && r.checkoutdate <= periodEnd
+    )
+    const currentValorVendido = currentReservas.reduce((sum: number, r: any) => sum + (r.reservetotal || 0), 0)
+    const currentDiariaMedia = currentReservas.length > 0
+      ? currentReservas.reduce((sum: number, r: any) => sum + (r.pricepernight || 0), 0) / currentReservas.length
+      : 0
+    const currentMeta = detailUnit.metas
+      ?.filter((m: any) => String(m.data_especifica || '').startsWith(periodMonth))
+      .reduce((sum: number, m: any) => sum + (m.meta || 0), 0) || 0
+    const currentPctMeta = currentMeta > 0 ? (currentValorVendido / currentMeta) * 100 : 0
+
+    // Previous year
+    const prevReservas = detailUnit.reservas.filter((r: any) =>
+      r.checkoutdate >= prevYearStart && r.checkoutdate <= prevYearEnd
+    )
+    const prevValorVendido = prevReservas.reduce((sum: number, r: any) => sum + (r.reservetotal || 0), 0)
+    const prevDiariaMedia = prevReservas.length > 0
+      ? prevReservas.reduce((sum: number, r: any) => sum + (r.pricepernight || 0), 0) / prevReservas.length
+      : 0
+    const prevMeta = detailUnit.metas
+      ?.filter((m: any) => String(m.data_especifica || '').startsWith(prevPeriodMonth))
+      .reduce((sum: number, m: any) => sum + (m.meta || 0), 0) || 0
+    const prevPctMeta = prevMeta > 0 ? (prevValorVendido / prevMeta) * 100 : 0
+
+    const hasData = prevReservas.length > 0 || prevMeta > 0
+
+    return {
+      hasData,
+      current: { diariaMedia: Math.round(currentDiariaMedia), valorVendido: currentValorVendido, pctMeta: currentPctMeta, reservas: currentReservas },
+      previous: { diariaMedia: Math.round(prevDiariaMedia), valorVendido: prevValorVendido, pctMeta: prevPctMeta, reservas: prevReservas },
+      prevYearStart, prevYearEnd
+    }
+  }, [detailUnit, detailUnitId, periods, selectedPeriodId])
 
   // ── Simulator ──
 
@@ -1666,86 +1746,260 @@ export default function PricingPage() {
                 </div>
               </div>
 
-              {/* Section B: Historical Peer Analysis */}
-              <div className="space-y-3 border-t pt-4">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Comparativo Histórico (Ano Anterior)
-                </h3>
-                <p className="text-[10px] text-muted-foreground">
-                  Dados do mesmo período no ano anterior
-                  {(() => {
-                    const sp = periods.find(p => p.id === selectedPeriodId)
-                    if (!sp) return ""
-                    const prevStart = sp.startDate.replace(/^\d{4}/, y => String(Number(y) - 1))
-                    const prevEnd = sp.endDate.replace(/^\d{4}/, y => String(Number(y) - 1))
-                    return ` (${formatDateDDMM(prevStart)} a ${formatDateDDMM(prevEnd)})`
-                  })()}
-                </p>
+              {/* Section B: Benchmarks (3 Pillars) */}
+              <div className="border-t pt-4">
+                <Tabs defaultValue="peer-group">
+                  <TabsList className="bg-muted/50 w-full">
+                    <TabsTrigger value="peer-group" className="text-[11px] flex-1">Peer Group</TabsTrigger>
+                    <TabsTrigger value="historical" className="text-[11px] flex-1">Histórico</TabsTrigger>
+                    <TabsTrigger value="market" className="text-[11px] flex-1">Mercado</TabsTrigger>
+                  </TabsList>
 
-                {/* Peer mode toggle */}
-                <div className="flex gap-1.5">
-                  <Badge
-                    variant={peerMode === "seasonality" ? "default" : "outline"}
-                    className="cursor-pointer text-[10px]"
-                    onClick={() => setPeerMode("seasonality")}
-                  >
-                    Sazonalidade
-                  </Badge>
-                  <Badge
-                    variant={peerMode === "grupo" ? "default" : "outline"}
-                    className="cursor-pointer text-[10px]"
-                    onClick={() => setPeerMode("grupo")}
-                  >
-                    Grupo de Acomodação
-                  </Badge>
-                </div>
+                  {/* Pillar 1: Peer Group */}
+                  <TabsContent value="peer-group" className="mt-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Unidades Semelhantes
+                      </h3>
+                      <div className="flex gap-1.5">
+                        <Badge
+                          variant={peerMode === "seasonality" ? "default" : "outline"}
+                          className="cursor-pointer text-[10px]"
+                          onClick={() => setPeerMode("seasonality")}
+                        >
+                          Nível Máximo
+                        </Badge>
+                        <Badge
+                          variant={peerMode === "grupo" ? "default" : "outline"}
+                          className="cursor-pointer text-[10px]"
+                          onClick={() => setPeerMode("grupo")}
+                        >
+                          Nível Médio
+                        </Badge>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      {peerMode === "seasonality"
+                        ? detailUnit.propriedade._i_maxguests != null
+                          ? `Tipologia ±1 hóspede (${Math.max(1, Math.floor(detailUnit.propriedade._i_maxguests) - 1)}–${Math.floor(detailUnit.propriedade._i_maxguests) + 1}) + mesmo grupo`
+                          : `Mesmo grupo (tipologia indefinida)`
+                        : `Tipologia ±1 hóspede + mesma praça, ou mesmo grupo`
+                      }
+                    </p>
 
-                {/* Peer table */}
-                <div className="max-h-[400px] overflow-y-auto">
-                  <Table>
-                    <TableHeader className="sticky top-0 bg-background z-10">
-                      <TableRow>
-                        <TableHead className="text-[10px]">Unidade</TableHead>
-                        <TableHead className="text-[10px] text-right">Preço Médio/Noite</TableHead>
-                        <TableHead className="text-[10px] text-right">RAC (dias)</TableHead>
-                        <TableHead className="text-[10px] text-right">Hóspedes</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {peerAnalysis.map(peer => (
-                        <TableRow key={peer.unitId} className={peer.isSelected ? "bg-blue-50" : ""}>
-                          <TableCell className="text-sm max-w-[180px]">
-                            <div className="truncate">
-                              <span className={peer.isSelected ? "font-bold" : "font-medium"}>{peer.unitName}</span>
-                              <span className="text-[10px] text-muted-foreground ml-1">
-                                ({peer.rooms}q {peer.maxGuests}h)
-                              </span>
+                    <div className="max-h-[350px] overflow-y-auto">
+                      <Table>
+                        <TableHeader className="sticky top-0 bg-background z-10">
+                          <TableRow>
+                            <TableHead className="text-[10px]">Unidade</TableHead>
+                            <TableHead className="text-[10px] text-right">Tarifário</TableHead>
+                            <TableHead className="text-[10px] text-right">Vendido</TableHead>
+                            <TableHead className="text-[10px] text-right">% Meta</TableHead>
+                            <TableHead className="text-[10px] text-right">Ocupação</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {peerAnalysis.map(peer => (
+                            <TableRow key={peer.unitId} className={peer.isSelected ? "bg-blue-50" : ""}>
+                              <TableCell className="text-sm max-w-[140px]">
+                                <div className="truncate">
+                                  <span className={peer.isSelected ? "font-bold" : "font-medium"}>{peer.unitName}</span>
+                                  <span className="text-[10px] text-muted-foreground ml-1">
+                                    ({peer.rooms}q {peer.maxGuests}h)
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right text-sm font-mono">
+                                {peer.tarifarioTrabalhado > 0 ? formatCurrency(peer.tarifarioTrabalhado) : "—"}
+                              </TableCell>
+                              <TableCell className="text-right text-sm font-mono">
+                                {peer.valorVendido > 0 ? formatCurrency(peer.valorVendido, true) : "—"}
+                              </TableCell>
+                              <TableCell className="text-right text-sm font-mono">
+                                {peer.percentualMeta > 0 ? (
+                                  <span className={peer.percentualMeta >= 100 ? "text-emerald-600" : peer.percentualMeta >= 60 ? "text-amber-600" : "text-red-600"}>
+                                    {peer.percentualMeta.toFixed(0)}%
+                                  </span>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="text-right text-sm font-mono">
+                                <span className={peer.occupancyPct >= 70 ? "text-emerald-600" : peer.occupancyPct >= 40 ? "text-amber-600" : "text-red-600"}>
+                                  {peer.occupancyPct}%
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {peerAnalysis.length === 0 && (
+                      <p className="text-center py-6 text-sm text-muted-foreground">Nenhum comparativo disponível.</p>
+                    )}
+                  </TabsContent>
+
+                  {/* Pillar 2: Historical */}
+                  <TabsContent value="historical" className="mt-3 space-y-3">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Comparativo Ano Anterior
+                    </h3>
+                    {historicalComparison?.hasData ? (
+                      <>
+                        <p className="text-[10px] text-muted-foreground">
+                          Período: {formatDateDDMM(historicalComparison.prevYearStart)} a {formatDateDDMM(historicalComparison.prevYearEnd)}
+                        </p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {/* Diária Média */}
+                          <div className="p-3 rounded-lg border space-y-2">
+                            <p className="text-[10px] text-muted-foreground uppercase font-medium">Diária Média</p>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-bold">{formatCurrency(historicalComparison.current.diariaMedia)}</p>
+                                {historicalComparison.current.reservas.length > 0 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 px-1.5 text-[10px] text-blue-600 hover:text-blue-700"
+                                    onClick={() => {
+                                      const period = periods.find(p => p.id === selectedPeriodId)
+                                      setReservasDialogData({
+                                        reservas: historicalComparison.current.reservas,
+                                        title: "Reservas - Período Atual",
+                                        subtitle: period ? `${formatDateDDMM(period.startDate)} a ${formatDateDDMM(period.endDate)}` : ""
+                                      })
+                                    }}
+                                  >
+                                    Ver+
+                                  </Button>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">Atual</p>
                             </div>
-                          </TableCell>
-                          <TableCell className="text-right text-sm font-mono">
-                            {peer.reservaCount > 0 ? formatCurrency(peer.avgPricePerNight) : "—"}
-                          </TableCell>
-                          <TableCell className="text-right text-sm font-mono text-muted-foreground">
-                            {peer.reservaCount > 0 ? peer.avgRAC : "—"}
-                          </TableCell>
-                          <TableCell className="text-right text-sm font-mono text-muted-foreground">
-                            {peer.reservaCount > 0 ? peer.avgGuests : "—"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                            <div className="border-t pt-1">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium text-muted-foreground">{historicalComparison.previous.diariaMedia > 0 ? formatCurrency(historicalComparison.previous.diariaMedia) : "—"}</p>
+                                {historicalComparison.previous.reservas.length > 0 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 px-1.5 text-[10px] text-blue-600 hover:text-blue-700"
+                                    onClick={() => {
+                                      setReservasDialogData({
+                                        reservas: historicalComparison.previous.reservas,
+                                        title: "Reservas - Ano Anterior",
+                                        subtitle: `${formatDateDDMM(historicalComparison.prevYearStart)} a ${formatDateDDMM(historicalComparison.prevYearEnd)}`
+                                      })
+                                    }}
+                                  >
+                                    Ver+
+                                  </Button>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">Ano anterior</p>
+                            </div>
+                          </div>
+                          {/* Valor Vendido */}
+                          <div className="p-3 rounded-lg border space-y-2">
+                            <p className="text-[10px] text-muted-foreground uppercase font-medium">Vendido</p>
+                            <div>
+                              <p className="text-sm font-bold">{formatCurrency(historicalComparison.current.valorVendido, true)}</p>
+                              <p className="text-[10px] text-muted-foreground">Atual</p>
+                            </div>
+                            <div className="border-t pt-1">
+                              <p className="text-sm font-medium text-muted-foreground">{historicalComparison.previous.valorVendido > 0 ? formatCurrency(historicalComparison.previous.valorVendido, true) : "—"}</p>
+                              <p className="text-[10px] text-muted-foreground">Ano anterior</p>
+                            </div>
+                          </div>
+                          {/* % Meta */}
+                          <div className="p-3 rounded-lg border space-y-2">
+                            <p className="text-[10px] text-muted-foreground uppercase font-medium">% Meta</p>
+                            <div>
+                              <p className={`text-sm font-bold ${historicalComparison.current.pctMeta >= 100 ? "text-emerald-600" : "text-red-600"}`}>
+                                {historicalComparison.current.pctMeta.toFixed(1)}%
+                              </p>
+                              <p className="text-[10px] text-muted-foreground">Atual</p>
+                            </div>
+                            <div className="border-t pt-1">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                {historicalComparison.previous.pctMeta > 0 ? `${historicalComparison.previous.pctMeta.toFixed(1)}%` : "—"}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground">Ano anterior</p>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-8 gap-2 bg-muted/20 rounded-lg">
+                        <Calendar className="h-8 w-8 text-muted-foreground/30" />
+                        <p className="text-sm text-muted-foreground">Sem dados suficientes</p>
+                        <p className="text-[10px] text-muted-foreground">Propriedade nova ou sem histórico no período anterior</p>
+                      </div>
+                    )}
+                  </TabsContent>
 
-                {peerAnalysis.length === 0 && (
-                  <p className="text-center py-6 text-sm text-muted-foreground">Nenhum comparativo disponível.</p>
-                )}
+                  {/* Pillar 3: Market (Competitors) */}
+                  <TabsContent value="market" className="mt-3 space-y-3">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Evolução de Preço — Concorrentes
+                    </h3>
+                    <CompetitorAnalysisCard
+                      unitId={detailUnitId!}
+                      unitName={detailUnit.propriedade.nomepropriedade}
+                      currentPrice={detailUnitPricing?.currentAvgPrice || null}
+                    />
+                  </TabsContent>
+                </Tabs>
               </div>
             </div>
           )}
         </SheetContent>
-      </Sheet >
-    </div >
+      </Sheet>
+
+      {/* Reservas Dialog */}
+      <Dialog open={!!reservasDialogData} onOpenChange={() => setReservasDialogData(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{reservasDialogData?.title || "Reservas"}</DialogTitle>
+            {reservasDialogData?.subtitle && (
+              <p className="text-sm text-muted-foreground">{reservasDialogData.subtitle}</p>
+            )}
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto">
+            {reservasDialogData && reservasDialogData.reservas.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Checkout</TableHead>
+                    <TableHead className="text-right">Preço/Noite</TableHead>
+                    <TableHead className="text-right">Noites</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reservasDialogData.reservas.map((reserva: any, idx: number) => (
+                    <TableRow key={idx}>
+                      <TableCell className="font-mono text-sm">
+                        {formatDateDDMM(reserva.checkoutdate)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatCurrency(reserva.pricepernight || 0)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {reserva.nightcount || 0}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm font-semibold">
+                        {formatCurrency(reserva.reservetotal || 0)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-center py-8 text-sm text-muted-foreground">Nenhuma reserva encontrada</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }
 

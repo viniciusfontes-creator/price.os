@@ -3,11 +3,24 @@
 import { Skeleton } from "@/components/ui/skeleton"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Database, Server, BarChart3, CheckCircle2 } from "lucide-react"
 
 interface InitialLoadingScreenProps {
     className?: string
+    /**
+     * Progresso externo (0-100) baseado em Promises reais
+     * Se fornecido, substitui a simulação baseada em tempo
+     */
+    externalProgress?: number
+    /**
+     * Callback chamado quando progresso atinge 100%
+     */
+    onComplete?: () => void
+    /**
+     * Força uso de simulação baseada em tempo mesmo se externalProgress for fornecido
+     */
+    useTimeSimulation?: boolean
 }
 
 interface LoadingStep {
@@ -24,18 +37,62 @@ const LOADING_STEPS: LoadingStep[] = [
     { id: "metrics", label: "Calculando métricas", icon: CheckCircle2, status: "pending" },
 ]
 
-export function InitialLoadingScreen({ className }: InitialLoadingScreenProps) {
+export function InitialLoadingScreen({
+    className,
+    externalProgress,
+    onComplete,
+    useTimeSimulation = false
+}: InitialLoadingScreenProps) {
     const [steps, setSteps] = useState<LoadingStep[]>(LOADING_STEPS)
     const [progress, setProgress] = useState(0)
     const [currentStepIndex, setCurrentStepIndex] = useState(0)
+    const hasCalledComplete = useRef(false)
 
+    const useExternal = externalProgress !== undefined && !useTimeSimulation
+
+    // Effect para progresso externo
     useEffect(() => {
+        if (!useExternal) return
+
+        const currentProgress = Math.max(0, Math.min(100, externalProgress))
+        setProgress(currentProgress)
+
+        // Calcular qual step deve estar ativo baseado no progresso
+        const stepIndex = Math.floor((currentProgress / 100) * LOADING_STEPS.length)
+        setCurrentStepIndex(Math.min(stepIndex, LOADING_STEPS.length - 1))
+
+        // Atualizar status dos steps
+        setSteps(prev => prev.map((step, i) => {
+            if (i < stepIndex) return { ...step, status: "complete" }
+            if (i === stepIndex && currentProgress < 100) return { ...step, status: "loading" }
+            if (currentProgress === 100) return { ...step, status: "complete" }
+            return { ...step, status: "pending" }
+        }))
+
+        // Callback quando completo
+        if (currentProgress === 100 && onComplete && !hasCalledComplete.current) {
+            hasCalledComplete.current = true
+            onComplete()
+        }
+    }, [externalProgress, useExternal, onComplete])
+
+    // Effect para simulação baseada em tempo (fallback/compatibilidade)
+    useEffect(() => {
+        if (useExternal) return // Não simular se usando progresso externo
+
         // Simular progresso baseado no tempo médio de carregamento
         const durations = [1500, 2500, 3000, 2000] // Durações estimadas para cada step (Total ~9s)
         let timeout: NodeJS.Timeout
+        let progressInterval: NodeJS.Timeout
 
         const updateStep = (index: number) => {
-            if (index >= LOADING_STEPS.length) return
+            if (index >= LOADING_STEPS.length) {
+                if (onComplete && !hasCalledComplete.current) {
+                    hasCalledComplete.current = true
+                    onComplete()
+                }
+                return
+            }
 
             // Marcar step atual como loading
             setSteps(prev => prev.map((step, i) => ({
@@ -51,7 +108,7 @@ export function InitialLoadingScreen({ className }: InitialLoadingScreenProps) {
             const increment = (endProgress - startProgress) / (duration / 50)
 
             let currentProgress = startProgress
-            const progressInterval = setInterval(() => {
+            progressInterval = setInterval(() => {
                 currentProgress += increment
                 if (currentProgress >= endProgress) {
                     currentProgress = endProgress
@@ -75,8 +132,9 @@ export function InitialLoadingScreen({ className }: InitialLoadingScreenProps) {
 
         return () => {
             clearTimeout(timeout)
+            clearInterval(progressInterval)
         }
-    }, [])
+    }, [useExternal, onComplete])
 
     return (
         <div className={cn("min-h-[60vh] flex items-center justify-center", className)}>

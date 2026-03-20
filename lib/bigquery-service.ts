@@ -269,15 +269,16 @@ const SQL_OCUPACAO = `
 SELECT
   idPropriedade as idpropriedade,
   FORMAT_DATE('%Y-%m-%d', DATE(datas)) as datas,
-  idReserva as idreserva,
-  CAST(ocupado AS INT64) as ocupado,
-  CAST(ocupado_proprietario AS INT64) as ocupado_proprietario,
-  CAST(manutencao AS INT64) as manutencao,
-  CAST(disponivel AS INT64) as disponivel
+  MAX(idReserva) as idreserva,
+  MAX(CAST(ocupado AS INT64)) as ocupado,
+  MAX(CAST(ocupado_proprietario AS INT64)) as ocupado_proprietario,
+  MAX(CAST(manutencao AS INT64)) as manutencao,
+  MAX(CAST(disponivel AS INT64)) as disponivel
 FROM
   \`stage.ocupacaoDisponibilidade_teste1\`
 WHERE
   DATE(datas) BETWEEN CURRENT_DATE() AND DATE_ADD(CURRENT_DATE(), INTERVAL 90 DAY)
+GROUP BY 1, 2
 `
 
 const SQL_PRICING_INTELLIGENCE = `
@@ -304,7 +305,11 @@ OcupacaoMes AS (
     SELECT idpropriedade, EXTRACT(MONTH FROM datas) AS mes, EXTRACT(YEAR FROM datas) AS ano,
         COUNTIF(ocupado = 1 AND ocupado_proprietario = 0 AND manutencao = 0) AS noites_vendidas,
         COUNTIF(ocupado = 0 AND ocupado_proprietario = 0 AND manutencao = 0) AS noites_livres
-    FROM stage.ocupacaoDisponibilidade_teste1
+    FROM (
+        SELECT idPropriedade, DATE(datas) AS datas, MAX(ocupado) as ocupado, MAX(ocupado_proprietario) as ocupado_proprietario, MAX(manutencao) as manutencao
+        FROM stage.ocupacaoDisponibilidade_teste1
+        GROUP BY 1, 2
+    )
     GROUP BY 1,2,3
 ),
 FinanceiroMes AS (
