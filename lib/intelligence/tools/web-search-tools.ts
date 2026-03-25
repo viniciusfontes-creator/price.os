@@ -1,19 +1,16 @@
 // ============================================
 // WEB SEARCH TOOLS
-// External intelligence via Google Search (Gemini grounding)
+// External intelligence via OpenRouter (Gemini)
 // ============================================
 
 import type { ToolDefinition, ToolResult } from '../types'
-import { GoogleGenerativeAI } from '@google/generative-ai'
-
-const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || ''
-const genAI = new GoogleGenerativeAI(GEMINI_KEY)
+import { getOpenRouterClient, GEMINI_MODEL } from '../openrouter-client'
 
 export const webSearchTools: ToolDefinition[] = [
   {
     name: 'web_search',
     description:
-      'Busca informacoes na internet usando Google Search. Use para: eventos em uma cidade/periodo, precos de imoveis em sites como OLX/Zap, noticias do mercado imobiliario, turismo, alta temporada, feriados, atrações locais. Retorna informacoes atualizadas da web.',
+      'Busca informacoes na internet usando IA. Use para: eventos em uma cidade/periodo, precos de imoveis, noticias do mercado imobiliario, turismo, alta temporada, feriados, atrações locais. Retorna informacoes baseadas no conhecimento do modelo.',
     parameters: {
       query: {
         type: 'string',
@@ -35,73 +32,41 @@ export const webSearchTools: ToolDefinition[] = [
           return { success: false, error: 'Query de busca obrigatoria', summary: 'Query vazia.' }
         }
 
-        if (!GEMINI_KEY) {
-          return { success: false, error: 'GEMINI_API_KEY nao configurada', summary: 'API key ausente.' }
-        }
-
-        // Use Gemini with Google Search grounding
-        const model = genAI.getGenerativeModel({
-          model: 'gemini-flash-latest',
-          tools: [{ googleSearchRetrieval: {} }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 2048,
-          },
-        })
-
+        const client = getOpenRouterClient()
         const contextInfo = params.context ? `\nContexto: ${params.context}` : ''
-        const prompt = `Voce e um assistente de pesquisa para uma empresa de gestao de propriedades de aluguel por temporada (short-stay) no Nordeste do Brasil.
 
-Pesquise na internet e responda sobre: ${query}${contextInfo}
+        const result = await client.chat.completions.create({
+          model: GEMINI_MODEL,
+          temperature: 0.3,
+          max_tokens: 2048,
+          messages: [{
+            role: 'user',
+            content: `Voce e um assistente de pesquisa para uma empresa de gestao de propriedades de aluguel por temporada (short-stay) no Nordeste do Brasil.
+
+Pesquise e responda sobre: ${query}${contextInfo}
 
 INSTRUCOES:
-- Forneca informacoes factuais e atualizadas
-- Inclua fontes quando possivel
+- Forneca informacoes factuais e atualizadas com base no seu conhecimento
 - Se for sobre precos, formate em BRL (R$)
 - Se for sobre eventos, inclua datas, local e relevancia para turismo
 - Se for sobre mercado imobiliario, inclua faixa de precos e tendencias
-- Seja objetivo e estruturado`
+- Seja objetivo e estruturado`,
+          }],
+        })
 
-        const result = await model.generateContent(prompt)
-        const response = result.response
-        const text = response.text()
-
-        // Extract grounding metadata if available
-        const candidate = response.candidates?.[0]
-        const groundingMeta = candidate?.groundingMetadata
-        const sources: string[] = []
-
-        if (groundingMeta) {
-          // Extract search entry point and web sources
-          const chunks = groundingMeta.groundingChunks || []
-          for (const chunk of chunks) {
-            if (chunk.web?.uri && chunk.web?.title) {
-              sources.push(`${chunk.web.title}: ${chunk.web.uri}`)
-            }
-          }
-        }
-
-        const sourcesText = sources.length > 0
-          ? `\n\nFontes consultadas:\n${sources.slice(0, 5).map((s, i) => `${i + 1}. ${s}`).join('\n')}`
-          : ''
+        const text = result.choices[0]?.message?.content || ''
 
         return {
           success: true,
           data: {
             response: text,
-            sources: sources.slice(0, 5),
+            sources: [],
             query,
           },
-          summary: `Pesquisa web: "${query}". ${sources.length} fonte(s) encontrada(s).${sourcesText}`,
+          summary: `Pesquisa: "${query}". Resposta obtida com sucesso.`,
         }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Erro desconhecido'
-
-        // Handle specific errors
-        if (errorMsg.includes('API key')) {
-          return { success: false, error: 'GEMINI_API_KEY invalida ou sem permissao para Google Search', summary: 'Erro de autenticacao.' }
-        }
-
         return {
           success: false,
           error: errorMsg,
@@ -137,47 +102,29 @@ INSTRUCOES:
           return { success: false, error: 'Location e period sao obrigatorios', summary: 'Parametros ausentes.' }
         }
 
-        if (!GEMINI_KEY) {
-          return { success: false, error: 'GEMINI_API_KEY nao configurada', summary: 'API key ausente.' }
-        }
+        const client = getOpenRouterClient()
 
-        const model = genAI.getGenerativeModel({
-          model: 'gemini-flash-latest',
-          tools: [{ googleSearchRetrieval: {} }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 2048,
-          },
-        })
-
-        const prompt = `Pesquise eventos, feriados, festivais e acontecimentos em ${location} durante ${period}.
+        const result = await client.chat.completions.create({
+          model: GEMINI_MODEL,
+          temperature: 0.3,
+          max_tokens: 2048,
+          messages: [{
+            role: 'user',
+            content: `Pesquise eventos, feriados, festivais e acontecimentos em ${location} durante ${period}.
 
 INSTRUCOES:
-- Liste todos os eventos relevantes encontrados
+- Liste todos os eventos relevantes conhecidos
 - Para cada evento inclua: nome, data(s), tipo (festival, feriado, esportivo, cultural), impacto esperado no turismo (alto/medio/baixo)
 - Inclua feriados nacionais e locais que caem nesse periodo
 - Mencione se ha alta temporada ou periodo de pico
 - Se nao encontrar eventos especificos, mencione a sazonalidade tipica da regiao
 - Estruture a resposta em formato de lista
 
-Contexto: Esta informacao sera usada para ajustar a precificacao de propriedades de aluguel por temporada na regiao.`
+Contexto: Esta informacao sera usada para ajustar a precificacao de propriedades de aluguel por temporada na regiao.`,
+          }],
+        })
 
-        const result = await model.generateContent(prompt)
-        const response = result.response
-        const text = response.text()
-
-        const candidate = response.candidates?.[0]
-        const groundingMeta = candidate?.groundingMetadata
-        const sources: string[] = []
-
-        if (groundingMeta) {
-          const chunks = groundingMeta.groundingChunks || []
-          for (const chunk of chunks) {
-            if (chunk.web?.uri && chunk.web?.title) {
-              sources.push(`${chunk.web.title}: ${chunk.web.uri}`)
-            }
-          }
-        }
+        const text = result.choices[0]?.message?.content || ''
 
         return {
           success: true,
@@ -185,9 +132,9 @@ Contexto: Esta informacao sera usada para ajustar a precificacao de propriedades
             response: text,
             location,
             period,
-            sources: sources.slice(0, 5),
+            sources: [],
           },
-          summary: `Eventos em ${location} (${period}): pesquisa concluida. ${sources.length} fonte(s).`,
+          summary: `Eventos em ${location} (${period}): pesquisa concluida.`,
         }
       } catch (err) {
         return {
@@ -229,10 +176,6 @@ Contexto: Esta informacao sera usada para ajustar a precificacao de propriedades
           return { success: false, error: 'Location e obrigatorio', summary: 'Parametro ausente.' }
         }
 
-        if (!GEMINI_KEY) {
-          return { success: false, error: 'GEMINI_API_KEY nao configurada', summary: 'API key ausente.' }
-        }
-
         const propertyType = params.property_type ? String(params.property_type) : 'apartamento'
         const purpose = params.purpose ? String(params.purpose) : 'temporada'
 
@@ -242,45 +185,29 @@ Contexto: Esta informacao sera usada para ajustar a precificacao de propriedades
           aluguel_fixo: 'aluguel fixo mensal',
         }
 
-        const model = genAI.getGenerativeModel({
-          model: 'gemini-flash-latest',
-          tools: [{ googleSearchRetrieval: {} }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 2048,
-          },
-        })
+        const client = getOpenRouterClient()
 
-        const prompt = `Pesquise precos de ${purposeMap[purpose] || 'aluguel por temporada'} para ${propertyType} em ${location}, Brasil.
+        const result = await client.chat.completions.create({
+          model: GEMINI_MODEL,
+          temperature: 0.3,
+          max_tokens: 2048,
+          messages: [{
+            role: 'user',
+            content: `Pesquise precos de ${purposeMap[purpose] || 'aluguel por temporada'} para ${propertyType} em ${location}, Brasil.
 
 INSTRUCOES:
-- Busque em sites como OLX, Zap Imoveis, Viva Real, Airbnb, Booking
 - Forneca faixa de precos (minimo, medio, maximo) em BRL (R$)
 - Se for temporada, use preco por noite
 - Se for venda, use preco total do imovel
 - Se for aluguel fixo, use preco mensal
-- Mencione a fonte dos dados
-- Inclua tendencia do mercado se disponivel (subindo, estavel, caindo)
+- Inclua tendencia do mercado se conhecido (subindo, estavel, caindo)
 - Compare com regioes similares se possivel
 
-Contexto: Uma gestora de propriedades de short-stay precisa entender o posicionamento de precos na regiao.`
+Contexto: Uma gestora de propriedades de short-stay precisa entender o posicionamento de precos na regiao.`,
+          }],
+        })
 
-        const result = await model.generateContent(prompt)
-        const response = result.response
-        const text = response.text()
-
-        const candidate = response.candidates?.[0]
-        const groundingMeta = candidate?.groundingMetadata
-        const sources: string[] = []
-
-        if (groundingMeta) {
-          const chunks = groundingMeta.groundingChunks || []
-          for (const chunk of chunks) {
-            if (chunk.web?.uri && chunk.web?.title) {
-              sources.push(`${chunk.web.title}: ${chunk.web.uri}`)
-            }
-          }
-        }
+        const text = result.choices[0]?.message?.content || ''
 
         return {
           success: true,
@@ -289,9 +216,9 @@ Contexto: Uma gestora de propriedades de short-stay precisa entender o posiciona
             location,
             property_type: propertyType,
             purpose,
-            sources: sources.slice(0, 5),
+            sources: [],
           },
-          summary: `Precos de mercado em ${location} (${propertyType}, ${purpose}): pesquisa concluida. ${sources.length} fonte(s).`,
+          summary: `Precos de mercado em ${location} (${propertyType}, ${purpose}): pesquisa concluida.`,
         }
       } catch (err) {
         return {

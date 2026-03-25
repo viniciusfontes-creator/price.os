@@ -2,15 +2,13 @@
 // ANALYST AGENT - Revenue & Performance
 // ============================================
 
-import { GoogleGenerativeAI } from '@google/generative-ai'
 import type { BaseAgent } from './base-agent'
 import { getAgentTools, buildAgentSystemPrompt } from './base-agent'
 import type { AgentContext, StreamCallback, ToolDefinition, ToolResult } from '../types'
 import { AGENT_PROMPTS } from '../prompts'
 import { getAllTools } from '../tools/tool-registry'
 import { getToolByName } from '../tools/tool-registry'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '')
+import { getOpenRouterClient, GEMINI_MODEL } from '../openrouter-client'
 
 export function createAnalystAgent(): BaseAgent {
   const tools = getAgentTools('analyst', getAllTools())
@@ -42,15 +40,7 @@ export async function processWithTools(
   tools: ToolDefinition[],
   agentId: 'analyst' | 'pricing' | 'market' | 'operations'
 ): Promise<string> {
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-flash-latest',
-    generationConfig: {
-      temperature: 0.7,
-      topP: 1,
-      topK: 1,
-      maxOutputTokens: 4096,
-    },
-  })
+  const client = getOpenRouterClient()
 
   const systemPrompt = buildAgentSystemPrompt(
     AGENT_PROMPTS[agentId],
@@ -58,26 +48,25 @@ export async function processWithTools(
     context.memories
   )
 
-  // Build history from conversation context
-  const history = context.conversationHistory
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .map((m) => ({
-      role: m.role === 'user' ? 'user' as const : 'model' as const,
-      parts: [{ text: m.content }],
-    }))
+  // Build messages array in OpenAI format
+  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    { role: 'system', content: systemPrompt },
+  ]
 
-  const chat = model.startChat({
-    history: [
-      { role: 'user', parts: [{ text: systemPrompt }] },
-      { role: 'model', parts: [{ text: 'Entendido. Estou pronto para analisar os dados usando as ferramentas disponiveis.' }] },
-      ...history,
-    ],
-  })
+  // Add conversation history
+  for (const m of context.conversationHistory.filter((m) => m.role === 'user' || m.role === 'assistant')) {
+    messages.push({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.content,
+    })
+  }
+
+  // Add current message
+  messages.push({ role: 'user', content: message })
 
   let fullResponse = ''
   let iterations = 0
-  const maxIterations = 5 // Reduced from 8 to conserve API quota
-  let currentMessage = message
+  const maxIterations = 5
 
   // Tool call cache to prevent duplicate calls within the same request
   const toolCallCache = new Map<string, { result: ToolResult; duration: number }>()
@@ -85,12 +74,20 @@ export async function processWithTools(
   while (iterations < maxIterations) {
     iterations++
 
-    const result = await chat.sendMessageStream(currentMessage)
+    // Stream response from OpenRouter
+    const stream = await client.chat.completions.create({
+      model: GEMINI_MODEL,
+      temperature: 0.7,
+      max_tokens: 4096,
+      stream: true,
+      messages,
+    })
+
     let iterResponse = ''
 
-    for await (const chunk of result.stream) {
-      const text = chunk.text()
-      iterResponse += text
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content || ''
+      iterResponse += delta
     }
 
     // Check if the response contains a tool call
@@ -115,7 +112,9 @@ export async function processWithTools(
         if (!toolDef) {
           const errorMsg = `Ferramenta "${toolName}" nao encontrada.`
           callbacks.onToolResult(toolName, { success: false, error: errorMsg, summary: errorMsg }, 0)
-          currentMessage = `Erro: ${errorMsg}. Tente outra abordagem.`
+          // Add assistant message and error to conversation for next iteration
+          messages.push({ role: 'assistant', content: iterResponse })
+          messages.push({ role: 'user', content: `Erro: ${errorMsg}. Tente outra abordagem.` })
           continue
         }
 
@@ -143,30 +142,29 @@ export async function processWithTools(
         let duration: number
 
         if (cached) {
-          // Return cached result instead of calling again
           toolResult = cached.result
           duration = 0
           callbacks.onToolResult(toolName, toolResult, duration)
         } else {
-          // Execute tool
           const startTime = Date.now()
           toolResult = await toolDef.execute(toolArgs, context)
           duration = Date.now() - startTime
-          // Cache the result
           toolCallCache.set(cacheKey, { result: toolResult, duration })
           callbacks.onToolResult(toolName, toolResult, duration)
         }
 
-        // Feed result back to the LLM
+        // Feed result back to the LLM by appending to messages
         const resultSummary = toolResult.success
           ? `Resultado da ferramenta ${toolName}:\n${toolResult.summary}\n\nDados:\n${JSON.stringify(toolResult.data, null, 2).slice(0, 6000)}`
           : `Erro na ferramenta ${toolName}: ${toolResult.error}`
 
-        currentMessage = resultSummary
+        messages.push({ role: 'assistant', content: iterResponse })
+        messages.push({ role: 'user', content: resultSummary })
       } catch (parseError) {
         const errorMsg = 'Erro ao processar chamada de ferramenta.'
         callbacks.onToken(`\n${errorMsg}\n`)
-        currentMessage = `Erro: formato de tool_call invalido. Responda diretamente ao usuario sem usar ferramentas.`
+        messages.push({ role: 'assistant', content: iterResponse })
+        messages.push({ role: 'user', content: `Erro: formato de tool_call invalido. Responda diretamente ao usuario sem usar ferramentas.` })
       }
     } else {
       // No tool call - this is the final response

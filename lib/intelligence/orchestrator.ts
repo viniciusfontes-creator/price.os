@@ -3,7 +3,6 @@
 // Classifies intent and routes to agents
 // ============================================
 
-import { GoogleGenerativeAI } from '@google/generative-ai'
 import type { AgentId } from '@/types/intelligence'
 import type { BaseAgent } from './agents/base-agent'
 import type { AgentContext, ClassificationResult, StreamCallback } from './types'
@@ -12,8 +11,7 @@ import { createAnalystAgent } from './agents/analyst'
 import { createPricingAgent } from './agents/pricing'
 import { createMarketAgent } from './agents/market'
 import { createOperationsAgent } from './agents/operations'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '')
+import { getOpenRouterClient, GEMINI_MODEL } from './openrouter-client'
 
 // ── Strategy Detection ──────────────────────────────
 // Complex queries get a pre-built execution plan injected into the agent prompt
@@ -127,13 +125,7 @@ export class Orchestrator {
     context: AgentContext
   ): Promise<ClassificationResult> {
     try {
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-flash-latest',
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 200,
-        },
-      })
+      const client = getOpenRouterClient()
 
       // Include last 3 messages for context
       const recentHistory = context.conversationHistory
@@ -148,8 +140,14 @@ ${recentHistory || '(primeira mensagem)'}
 
 Mensagem do usuario: ${message}`
 
-      const result = await model.generateContent(prompt)
-      const text = result.response.text().trim()
+      const result = await client.chat.completions.create({
+        model: GEMINI_MODEL,
+        temperature: 0.1,
+        max_tokens: 200,
+        messages: [{ role: 'user', content: prompt }],
+      })
+
+      const text = (result.choices[0]?.message?.content || '').trim()
 
       // Parse JSON response
       const jsonMatch = text.match(/\{[\s\S]*\}/)
@@ -182,16 +180,19 @@ Mensagem do usuario: ${message}`
     assistantResponse: string
   ): Promise<string> {
     try {
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-flash-latest',
-        generationConfig: { temperature: 0.3, maxOutputTokens: 30 },
+      const client = getOpenRouterClient()
+
+      const result = await client.chat.completions.create({
+        model: GEMINI_MODEL,
+        temperature: 0.3,
+        max_tokens: 30,
+        messages: [{
+          role: 'user',
+          content: `Gere um titulo CURTO (maximo 5 palavras) em portugues para esta conversa. Responda APENAS com o titulo, sem formatacao markdown, sem asteriscos, sem aspas, sem pontuacao final.\n\nUsuario: ${userMessage.slice(0, 150)}\nAssistente: ${assistantResponse.slice(0, 150)}\n\nTitulo:`,
+        }],
       })
 
-      const result = await model.generateContent(
-        `Gere um titulo CURTO (maximo 5 palavras) em portugues para esta conversa. Responda APENAS com o titulo, sem formatacao markdown, sem asteriscos, sem aspas, sem pontuacao final.\n\nUsuario: ${userMessage.slice(0, 150)}\nAssistente: ${assistantResponse.slice(0, 150)}\n\nTitulo:`
-      )
-
-      const title = result.response.text().trim().replace(/[*#_`"]/g, '').slice(0, 50)
+      const title = (result.choices[0]?.message?.content || '').trim().replace(/[*#_`"]/g, '').slice(0, 50)
       return title || 'Nova conversa'
     } catch {
       return 'Nova conversa'
