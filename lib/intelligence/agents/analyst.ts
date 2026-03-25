@@ -85,12 +85,21 @@ export async function processWithTools(
   while (iterations < maxIterations) {
     iterations++
 
-    const result = await chat.sendMessageStream(currentMessage)
     let iterResponse = ''
 
-    for await (const chunk of result.stream) {
-      const text = chunk.text()
-      iterResponse += text
+    try {
+      // Use non-streaming to avoid "Failed to parse stream" errors
+      const result = await chat.sendMessage(currentMessage)
+      iterResponse = result.response.text()
+    } catch (streamError) {
+      const errMsg = streamError instanceof Error ? streamError.message : 'Erro desconhecido'
+      // If even non-streaming fails (e.g. quota), break the loop
+      if (errMsg.includes('429') || errMsg.includes('quota')) {
+        callbacks.onError(`Limite de cota da API atingido. Tente novamente em alguns segundos.`)
+        break
+      }
+      callbacks.onError(`Erro na comunicacao com a IA: ${errMsg}`)
+      break
     }
 
     // Check if the response contains a tool call
@@ -179,13 +188,10 @@ export async function processWithTools(
   // If the loop ended after tool calls without a final text response, force one
   if (iterations >= maxIterations && !fullResponse.trim()) {
     try {
-      const finalResult = await chat.sendMessageStream(
+      const finalResult = await chat.sendMessage(
         'Voce atingiu o limite de iteracoes. Com base em TODOS os dados que voce ja coletou das ferramentas, forneca agora sua resposta final completa ao usuario. NAO chame mais ferramentas. Responda diretamente.'
       )
-      let finalText = ''
-      for await (const chunk of finalResult.stream) {
-        finalText += chunk.text()
-      }
+      let finalText = finalResult.response.text()
       // Remove any accidental tool calls from the forced response
       finalText = finalText.replace(/```tool_call[\s\S]*?```/g, '').trim()
       if (finalText) {
