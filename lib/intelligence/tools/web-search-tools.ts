@@ -42,7 +42,7 @@ export const webSearchTools: ToolDefinition[] = [
         // Use Gemini with Google Search grounding
         const model = genAI.getGenerativeModel({
           model: 'gemini-flash-latest',
-          tools: [{ googleSearchRetrieval: {} }],
+          tools: [{ googleSearch: {} } as any],
           generationConfig: {
             temperature: 0.3,
             maxOutputTokens: 2048,
@@ -143,7 +143,7 @@ INSTRUCOES:
 
         const model = genAI.getGenerativeModel({
           model: 'gemini-flash-latest',
-          tools: [{ googleSearchRetrieval: {} }],
+          tools: [{ googleSearch: {} } as any],
           generationConfig: {
             temperature: 0.3,
             maxOutputTokens: 2048,
@@ -244,7 +244,7 @@ Contexto: Esta informacao sera usada para ajustar a precificacao de propriedades
 
         const model = genAI.getGenerativeModel({
           model: 'gemini-flash-latest',
-          tools: [{ googleSearchRetrieval: {} }],
+          tools: [{ googleSearch: {} } as any],
           generationConfig: {
             temperature: 0.3,
             maxOutputTokens: 2048,

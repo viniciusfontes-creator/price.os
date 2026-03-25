@@ -176,5 +176,29 @@ export async function processWithTools(
     }
   }
 
+  // If the loop ended after tool calls without a final text response, force one
+  if (iterations >= maxIterations && !fullResponse.trim()) {
+    try {
+      const finalResult = await chat.sendMessageStream(
+        'Voce atingiu o limite de iteracoes. Com base em TODOS os dados que voce ja coletou das ferramentas, forneca agora sua resposta final completa ao usuario. NAO chame mais ferramentas. Responda diretamente.'
+      )
+      let finalText = ''
+      for await (const chunk of finalResult.stream) {
+        finalText += chunk.text()
+      }
+      // Remove any accidental tool calls from the forced response
+      finalText = finalText.replace(/```tool_call[\s\S]*?```/g, '').trim()
+      if (finalText) {
+        fullResponse += finalText
+        callbacks.onToken(finalText)
+      }
+    } catch {
+      // If even this fails, provide a fallback
+      const fallback = '\n\nOs dados foram coletados com sucesso pelas ferramentas acima. Por favor, refine sua pergunta para que eu possa apresentar uma analise mais detalhada.'
+      fullResponse += fallback
+      callbacks.onToken(fallback)
+    }
+  }
+
   return fullResponse
 }
