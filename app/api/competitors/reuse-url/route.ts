@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-const supabase = createClient(supabaseUrl, supabaseKey)
+const getSupabase = () => {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+    if (!supabaseUrl || !supabaseKey) return null
+    return createClient(supabaseUrl, supabaseKey)
+}
 
 /**
  * Endpoint para reutilizar um listing do Airbnb já indexado em outra cesta
@@ -21,6 +24,11 @@ export async function POST(request: Request) {
                 { success: false, error: 'airbnb_listing_id e basket_id são obrigatórios' },
                 { status: 400 }
             )
+        }
+
+        const supabase = getSupabase()
+        if (!supabase) {
+            return NextResponse.json({ success: false, error: 'Supabase URL missing' }, { status: 500 })
         }
 
         // Verificar se a cesta de destino existe
