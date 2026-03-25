@@ -1,12 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const getSupabase = () => {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-    if (!supabaseUrl || !supabaseKey) return null
-    return createClient(supabaseUrl, supabaseKey)
-}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+const supabase = createClient(supabaseUrl, supabaseKey)
 
 export async function POST(request: Request) {
     try {
@@ -16,11 +13,6 @@ export async function POST(request: Request) {
         if (!basket_id) {
             console.error('[API] Missing required field: basket_id')
             return NextResponse.json({ success: false, error: 'Basket ID is required' }, { status: 400 })
-        }
-
-        const supabase = getSupabase()
-        if (!supabase) {
-            return NextResponse.json({ success: false, error: 'Supabase client not initialized' }, { status: 500 })
         }
 
         // Determine item type and validate required fields
@@ -93,11 +85,6 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ success: false, error: 'Item ID is required' }, { status: 400 })
         }
 
-        const supabase = getSupabase()
-        if (!supabase) {
-            return NextResponse.json({ success: false, error: 'Supabase client not initialized' }, { status: 500 })
-        }
-
         const { error } = await supabase
             .from('basket_items')
             .delete()
@@ -118,11 +105,6 @@ export async function PATCH(request: Request) {
 
         if (!id) {
             return NextResponse.json({ success: false, error: 'Item ID is required' }, { status: 400 })
-        }
-
-        const supabase = getSupabase()
-        if (!supabase) {
-            return NextResponse.json({ success: false, error: 'Supabase client not initialized' }, { status: 500 })
         }
 
         // If setting as primary, unset others in the same basket

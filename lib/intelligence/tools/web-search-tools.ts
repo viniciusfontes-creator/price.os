@@ -6,7 +6,8 @@
 import type { ToolDefinition, ToolResult } from '../types'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
+const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || ''
+const genAI = new GoogleGenerativeAI(GEMINI_KEY)
 
 export const webSearchTools: ToolDefinition[] = [
   {
@@ -34,7 +35,7 @@ export const webSearchTools: ToolDefinition[] = [
           return { success: false, error: 'Query de busca obrigatoria', summary: 'Query vazia.' }
         }
 
-        if (!process.env.GEMINI_API_KEY) {
+        if (!GEMINI_KEY) {
           return { success: false, error: 'GEMINI_API_KEY nao configurada', summary: 'API key ausente.' }
         }
 
@@ -136,7 +137,7 @@ INSTRUCOES:
           return { success: false, error: 'Location e period sao obrigatorios', summary: 'Parametros ausentes.' }
         }
 
-        if (!process.env.GEMINI_API_KEY) {
+        if (!GEMINI_KEY) {
           return { success: false, error: 'GEMINI_API_KEY nao configurada', summary: 'API key ausente.' }
         }
 
@@ -228,7 +229,7 @@ Contexto: Esta informacao sera usada para ajustar a precificacao de propriedades
           return { success: false, error: 'Location e obrigatorio', summary: 'Parametro ausente.' }
         }
 
-        if (!process.env.GEMINI_API_KEY) {
+        if (!GEMINI_KEY) {
           return { success: false, error: 'GEMINI_API_KEY nao configurada', summary: 'API key ausente.' }
         }
 

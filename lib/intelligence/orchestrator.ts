@@ -13,7 +13,7 @@ import { createPricingAgent } from './agents/pricing'
 import { createMarketAgent } from './agents/market'
 import { createOperationsAgent } from './agents/operations'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '')
 
 // ── Strategy Detection ──────────────────────────────
 // Complex queries get a pre-built execution plan injected into the agent prompt

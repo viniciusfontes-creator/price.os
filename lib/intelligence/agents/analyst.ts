@@ -5,12 +5,12 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import type { BaseAgent } from './base-agent'
 import { getAgentTools, buildAgentSystemPrompt } from './base-agent'
-import type { AgentContext, StreamCallback, ToolDefinition } from '../types'
+import type { AgentContext, StreamCallback, ToolDefinition, ToolResult } from '../types'
 import { AGENT_PROMPTS } from '../prompts'
 import { getAllTools } from '../tools/tool-registry'
 import { getToolByName } from '../tools/tool-registry'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '')
 
 export function createAnalystAgent(): BaseAgent {
   const tools = getAgentTools('analyst', getAllTools())
@@ -76,8 +76,11 @@ export async function processWithTools(
 
   let fullResponse = ''
   let iterations = 0
-  const maxIterations = 8 // Allow complex multi-step analyses
+  const maxIterations = 5 // Reduced from 8 to conserve API quota
   let currentMessage = message
+
+  // Tool call cache to prevent duplicate calls within the same request
+  const toolCallCache = new Map<string, { result: ToolResult; duration: number }>()
 
   while (iterations < maxIterations) {
     iterations++
@@ -132,12 +135,27 @@ export async function processWithTools(
           break
         }
 
-        // Execute tool
-        const startTime = Date.now()
-        const toolResult = await toolDef.execute(toolArgs, context)
-        const duration = Date.now() - startTime
+        // Check cache for duplicate tool calls
+        const cacheKey = `${toolName}::${JSON.stringify(toolArgs)}`
+        const cached = toolCallCache.get(cacheKey)
 
-        callbacks.onToolResult(toolName, toolResult, duration)
+        let toolResult: ToolResult
+        let duration: number
+
+        if (cached) {
+          // Return cached result instead of calling again
+          toolResult = cached.result
+          duration = 0
+          callbacks.onToolResult(toolName, toolResult, duration)
+        } else {
+          // Execute tool
+          const startTime = Date.now()
+          toolResult = await toolDef.execute(toolArgs, context)
+          duration = Date.now() - startTime
+          // Cache the result
+          toolCallCache.set(cacheKey, { result: toolResult, duration })
+          callbacks.onToolResult(toolName, toolResult, duration)
+        }
 
         // Feed result back to the LLM
         const resultSummary = toolResult.success
