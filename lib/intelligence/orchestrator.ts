@@ -128,7 +128,7 @@ export class Orchestrator {
   ): Promise<ClassificationResult> {
     try {
       const model = genAI.getGenerativeModel({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-1.5-flash',
         generationConfig: {
           temperature: 0.1,
           maxOutputTokens: 200,
@@ -183,7 +183,7 @@ Mensagem do usuario: ${message}`
   ): Promise<string> {
     try {
       const model = genAI.getGenerativeModel({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-1.5-flash',
         generationConfig: { temperature: 0.3, maxOutputTokens: 30 },
       })
 
