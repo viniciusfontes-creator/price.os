@@ -581,8 +581,8 @@ export default function PricingPage() {
       )
       const valorVendido = periodReservas.reduce((sum: number, r: any) => sum + (r.reservetotal || 0), 0)
 
-      // Tarifário Trabalhado (using metricas.precoMedioNoite for consistency with "Tarifário Atual")
-      const tarifarioTrabalhado = item.metricas?.precoMedioNoite || item.propriedade.valor_tarifario || (item.propriedade as any).baserate_atual || 0
+      // Preço médio por noite (price per night from actual reservations)
+      const precoNoite = item.metricas?.precoMedioNoite || item.propriedade.valor_tarifario || (item.propriedade as any).baserate_atual || 0
 
       // Meta (checkout-based for this month)
       const periodMonth = selectedPeriod.startDate.slice(0, 7)
@@ -606,7 +606,7 @@ export default function PricingPage() {
         unitName: item.propriedade.nomepropriedade,
         rooms: item.propriedade._i_rooms || 0,
         maxGuests: item.propriedade._i_maxguests || 0,
-        tarifarioTrabalhado: Math.round(tarifarioTrabalhado),
+        precoNoite: Math.round(precoNoite),
         valorVendido: Math.round(valorVendido),
         percentualMeta: Number(percentualMeta.toFixed(1)),
         occupancyPct,
@@ -644,9 +644,8 @@ export default function PricingPage() {
       r.checkoutdate >= periodStart && r.checkoutdate <= periodEnd
     )
     const currentValorVendido = currentReservas.reduce((sum: number, r: any) => sum + (r.reservetotal || 0), 0)
-    const currentDiariaMedia = currentReservas.length > 0
-      ? currentReservas.reduce((sum: number, r: any) => sum + (r.pricepernight || 0), 0) / currentReservas.length
-      : 0
+    // Preço/Noite atual = metricas.precoMedioNoite (consistente com Peer Group)
+    const currentDiariaMedia = detailUnit.metricas?.precoMedioNoite || 0
     const currentMeta = detailUnit.metas
       ?.filter((m: any) => String(m.data_especifica || '').startsWith(periodMonth))
       .reduce((sum: number, m: any) => sum + (m.meta || 0), 0) || 0
@@ -657,8 +656,10 @@ export default function PricingPage() {
       r.checkoutdate >= prevYearStart && r.checkoutdate <= prevYearEnd
     )
     const prevValorVendido = prevReservas.reduce((sum: number, r: any) => sum + (r.reservetotal || 0), 0)
-    const prevDiariaMedia = prevReservas.length > 0
-      ? prevReservas.reduce((sum: number, r: any) => sum + (r.pricepernight || 0), 0) / prevReservas.length
+    // Preço/Noite anterior = média ponderada de pricepernight por nightcount
+    const prevTotalNights = prevReservas.reduce((sum: number, r: any) => sum + (r.nightcount || 0), 0)
+    const prevDiariaMedia = prevTotalNights > 0
+      ? prevReservas.reduce((sum: number, r: any) => sum + ((r.pricepernight || 0) * (r.nightcount || 0)), 0) / prevTotalNights
       : 0
     const prevMeta = detailUnit.metas
       ?.filter((m: any) => String(m.data_especifica || '').startsWith(prevPeriodMonth))
@@ -1792,7 +1793,7 @@ export default function PricingPage() {
                         <TableHeader className="sticky top-0 bg-background z-10">
                           <TableRow>
                             <TableHead className="text-[10px]">Unidade</TableHead>
-                            <TableHead className="text-[10px] text-right">Tarifário</TableHead>
+                            <TableHead className="text-[10px] text-right">Preço/Noite</TableHead>
                             <TableHead className="text-[10px] text-right">Vendido</TableHead>
                             <TableHead className="text-[10px] text-right">% Meta</TableHead>
                             <TableHead className="text-[10px] text-right">Ocupação</TableHead>
@@ -1810,7 +1811,7 @@ export default function PricingPage() {
                                 </div>
                               </TableCell>
                               <TableCell className="text-right text-sm font-mono">
-                                {peer.tarifarioTrabalhado > 0 ? formatCurrency(peer.tarifarioTrabalhado) : "—"}
+                                {peer.precoNoite > 0 ? formatCurrency(peer.precoNoite) : "—"}
                               </TableCell>
                               <TableCell className="text-right text-sm font-mono">
                                 {peer.valorVendido > 0 ? formatCurrency(peer.valorVendido, true) : "—"}
@@ -1848,9 +1849,9 @@ export default function PricingPage() {
                           Período: {formatDateDDMM(historicalComparison.prevYearStart)} a {formatDateDDMM(historicalComparison.prevYearEnd)}
                         </p>
                         <div className="grid grid-cols-3 gap-2">
-                          {/* Diária Média */}
+                          {/* Preço/Noite */}
                           <div className="p-3 rounded-lg border space-y-2">
-                            <p className="text-[10px] text-muted-foreground uppercase font-medium">Diária Média</p>
+                            <p className="text-[10px] text-muted-foreground uppercase font-medium">Preço/Noite</p>
                             <div>
                               <div className="flex items-center gap-2">
                                 <p className="text-sm font-bold">{formatCurrency(historicalComparison.current.diariaMedia)}</p>
