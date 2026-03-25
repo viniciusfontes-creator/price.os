@@ -43,7 +43,7 @@ export async function processWithTools(
   agentId: 'analyst' | 'pricing' | 'market' | 'operations'
 ): Promise<string> {
   const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
+    model: 'gemini-flash-latest',
     generationConfig: {
       temperature: 0.7,
       topP: 1,
