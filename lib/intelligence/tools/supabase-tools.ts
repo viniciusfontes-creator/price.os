@@ -396,29 +396,16 @@ export const supabaseTools: ToolDefinition[] = [
         const startDate = params.start_date ? String(params.start_date) : today
         const endDate = params.end_date ? String(params.end_date) : defaultEnd
 
-        // Use numeric IDs for the query - build filter for each
-        let priceQuery = supabase
+        // Use .in() filter for exact ID matching
+        const priceQuery = supabase
           .from('airbnb_extrações')
           .select('id_numerica, nome_anuncio, preco_total, quantidade_noites, checkin_formatado, data_extracao, hospedes_adultos, url_anuncio')
+          .in('id_numerica', airbnbIds.map(id => Number(id)))
           .gte('checkin_formatado', startDate)
           .lte('checkin_formatado', endDate)
           .order('checkin_formatado', { ascending: true })
           .order('data_extracao', { ascending: false })
           .limit(500)
-
-        // Filter by airbnb IDs - use partial match (first 15 chars) for precision safety
-        const idFilters = airbnbIds.map(id => {
-          const partial = id.substring(0, 15)
-          return `id_numerica.gte.${partial}00000,id_numerica.lt.${partial}99999`
-        })
-        // Use OR filter for multiple IDs
-        if (airbnbIds.length === 1) {
-          const partial = airbnbIds[0].substring(0, 15)
-          priceQuery = priceQuery.gte('id_numerica', `${partial}0000`).lt('id_numerica', `${partial}9999`)
-        } else {
-          // For multiple IDs, query without ID filter and filter client-side
-          // (Supabase doesn't support OR on numeric ranges well)
-        }
 
         const { data: priceData, error: priceError } = await priceQuery
 
@@ -426,12 +413,7 @@ export const supabaseTools: ToolDefinition[] = [
           return { success: false, error: priceError.message, summary: `Erro ao buscar precos: ${priceError.message}` }
         }
 
-        // Filter to only matching IDs (client-side for multi-ID case)
-        const airbnbIdPrefixes = airbnbIds.map(id => id.substring(0, 15))
-        const filteredPrices = (priceData || []).filter((row: Record<string, unknown>) => {
-          const rowId = String(row.id_numerica || '')
-          return airbnbIdPrefixes.some(prefix => rowId.startsWith(prefix))
-        })
+        const filteredPrices = priceData || []
 
         // Compute per-listing latest price and stats
         const byListing: Record<string, { name: string; prices: number[]; latest_price: number }> = {}
@@ -562,14 +544,10 @@ export const supabaseTools: ToolDefinition[] = [
           query = query.gte('hospedes_adultos', Number(params.min_guests))
         }
 
-        // Filter by specific IDs (use partial match for first ID if provided)
+        // Filter by specific IDs
         if (params.airbnb_ids) {
-          const ids = String(params.airbnb_ids).split(',').map(id => id.trim())
-          if (ids.length === 1) {
-            const partial = ids[0].substring(0, 15)
-            query = query.gte('id_numerica', `${partial}0000`).lt('id_numerica', `${partial}9999`)
-          }
-          // Multiple IDs: filter client-side after fetch
+          const ids = String(params.airbnb_ids).split(',').map(id => Number(id.trim()))
+          query = query.in('id_numerica', ids)
         }
 
         const limit = Math.min(Number(params.max_results) || 50, 200)
@@ -579,18 +557,7 @@ export const supabaseTools: ToolDefinition[] = [
           return { success: false, error: error.message, summary: `Erro: ${error.message}` }
         }
 
-        // Client-side filter for multiple IDs
-        let results = data || []
-        if (params.airbnb_ids) {
-          const ids = String(params.airbnb_ids).split(',').map(id => id.trim())
-          if (ids.length > 1) {
-            const prefixes = ids.map(id => id.substring(0, 15))
-            results = results.filter((row: Record<string, unknown>) => {
-              const rowId = String(row.id_numerica || '')
-              return prefixes.some(p => rowId.startsWith(p))
-            })
-          }
-        }
+        const results = data || []
 
         // Compute price per night and aggregate stats
         const enriched = results.map((row: Record<string, unknown>) => {

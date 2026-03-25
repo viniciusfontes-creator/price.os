@@ -146,7 +146,7 @@ Ocupacao30d AS (
     COUNTIF(ocupado = 0 AND ocupado_proprietario = 0 AND manutencao = 0) AS disponiveis_30d
   FROM (SELECT idPropriedade, DATE(datas) AS datas, MAX(ocupado) as ocupado, MAX(ocupado_proprietario) as ocupado_proprietario, MAX(manutencao) as manutencao
     FROM stage.ocupacaoDisponibilidade_teste1
-    WHERE datas >= CURRENT_TIMESTAMP() AND datas < TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+    WHERE datas >= CURRENT_DATETIME() AND datas < DATETIME_ADD(CURRENT_DATETIME(), INTERVAL 30 DAY)
     GROUP BY 1, 2)
   GROUP BY 1
 ),
@@ -560,7 +560,7 @@ occ AS (
     COUNTIF(ocupado = 0 AND ocupado_proprietario = 0 AND manutencao = 0) AS disponiveis
   FROM (SELECT idPropriedade, DATE(datas) AS datas, MAX(ocupado) as ocupado, MAX(ocupado_proprietario) as ocupado_proprietario, MAX(manutencao) as manutencao
     FROM stage.ocupacaoDisponibilidade_teste1
-    WHERE datas >= CURRENT_TIMESTAMP() AND datas < TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+    WHERE datas >= CURRENT_DATETIME() AND datas < DATETIME_ADD(CURRENT_DATETIME(), INTERVAL 30 DAY)
     GROUP BY 1, 2)
   GROUP BY 1
 ),
