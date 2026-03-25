@@ -6,7 +6,7 @@
 import OpenAI from 'openai'
 
 // Model to use across all agents
-export const GEMINI_MODEL = 'google/gemini-2.5-flash-preview'
+export const GEMINI_MODEL = 'google/gemini-3-flash-preview'
 
 let _client: OpenAI | null = null
 
