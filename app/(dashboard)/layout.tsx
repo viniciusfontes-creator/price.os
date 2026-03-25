@@ -8,6 +8,7 @@ import { ViewContextProvider } from "@/contexts/view-context"
 import { UserMenu } from "@/components/user-menu"
 import { ViewSwitcher } from "@/components/view-switcher"
 import { ViewGuard } from "@/components/view-guard"
+import { GlobalPageHelp } from "@/components/global-page-help"
 
 export default function DashboardLayout({
     children,
@@ -33,6 +34,7 @@ export default function DashboardLayout({
                                 <main className="flex-1 p-6">{children}</main>
                             </SidebarInset>
                         </SidebarProvider>
+                        <GlobalPageHelp />
                     </DashboardProvider>
                 </GlobalFiltersProvider>
             </ViewGuard>

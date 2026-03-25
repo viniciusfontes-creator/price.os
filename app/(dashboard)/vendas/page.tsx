@@ -45,11 +45,18 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+    Tabs,
+    TabsContent,
+    TabsList,
+    TabsTrigger,
+} from "@/components/ui/tabs"
 import { SalesUnitPerformance, SalesMetrics } from "@/types"
 import useSWR from "swr"
 import Link from "next/link"
 import { AvailabilityCalendar, PricingPeriod } from "@/components/availability-calendar"
 import { CompetitorAnalysisCard } from "@/components/competitor-analysis-card"
+import { SalesMarketVision } from "@/components/sales-market-vision"
 
 const CHART_COLORS = ['#2563eb', '#16a34a', '#db2777', '#ea580c', '#7c3aed', '#0891b2']
 
@@ -1343,7 +1350,7 @@ export default function SalesPage() {
 
             {/* Intelligence Modal (NEW VERSION WITH THERMOMETER) */}
             <Dialog open={!!selectedUnit} onOpenChange={(open) => !open && setSelectedUnit(null)}>
-                <DialogContent className="max-w-[95vw] sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+                <DialogContent className="max-w-[95vw] sm:max-w-[850px] max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <Target className="h-5 w-5 text-primary" />
@@ -1355,132 +1362,202 @@ export default function SalesPage() {
                     </DialogHeader>
 
                     {selectedUnit && (
-                        <div className="space-y-6 py-4 overflow-y-auto max-h-[80vh] pr-2">
+                        <Tabs defaultValue="interna" className="w-full">
+                            <TabsList className="grid w-full grid-cols-2 mb-4">
+                                <TabsTrigger value="interna">Estratégia Interna</TabsTrigger>
+                                <TabsTrigger value="mercado">Mercado</TabsTrigger>
+                            </TabsList>
 
-                            {/* --- MARKET INTELLIGENCE SECTION --- */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* 1. COMPONENTIZED PRICING POSITIONING */}
-                                <CompetitorAnalysisCard
-                                    unitId={selectedUnit.id}
-                                    unitName={selectedUnit.name}
-                                    currentPrice={selectedUnit.currentPrice}
-                                />
+                            <TabsContent value="interna" className="space-y-6 pt-2">
+                                <div className="space-y-6 py-4 overflow-y-auto max-h-[70vh] pr-2">
+                                    {/* --- MARKET INTELLIGENCE SECTION --- */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* 1. COMPONENTIZED PRICING POSITIONING */}
+                                        <CompetitorAnalysisCard
+                                            unitId={selectedUnit.id}
+                                            unitName={selectedUnit.name}
+                                            currentPrice={selectedUnit.currentPrice}
+                                        />
 
-                                {/* GAP DE FATURAMENTO - recalculated from local data */}
-                                <div className="space-y-4">
-                                    <div className="p-4 bg-muted/40 rounded-xl border">
-                                        <p className="text-[10px] text-muted-foreground uppercase font-bold mb-1">Gap de Faturamento</p>
-                                        <div className="flex justify-between items-end">
-                                            <p className={`text-2xl font-bold ${(dialogMetrics?.gap ?? 0) > 0 ? 'text-destructive' : 'text-emerald-600'}`}>
-                                                {(dialogMetrics?.gap ?? 0) <= 0 ? '+' : ''}R$ {Math.abs(dialogMetrics?.gap ?? 0).toLocaleString("pt-BR")}
+                                        {/* GAP DE FATURAMENTO - recalculated from local data */}
+                                        <div className="space-y-4">
+                                            <div className="p-4 bg-muted/40 rounded-xl border">
+                                                <p className="text-[10px] text-muted-foreground uppercase font-bold mb-1">Gap de Faturamento</p>
+                                                <div className="flex justify-between items-end">
+                                                    <p className={`text-2xl font-bold ${(dialogMetrics?.gap ?? 0) > 0 ? 'text-destructive' : 'text-emerald-600'}`}>
+                                                        {(dialogMetrics?.gap ?? 0) <= 0 ? '+' : ''}R$ {Math.abs(dialogMetrics?.gap ?? 0).toLocaleString("pt-BR")}
+                                                    </p>
+                                                    <Badge variant="outline" className="text-xs">
+                                                        {(dialogMetrics?.percentAchieved ?? 0).toFixed(0)}% da Meta
+                                                    </Badge>
+                                                </div>
+                                                <Progress value={Math.min(dialogMetrics?.percentAchieved ?? 0, 100)} className="h-1 mt-2" />
+                                            </div>
+
+                                            <div className="grid grid-cols-1 mt-3 gap-3">
+                                                <div className="p-4 bg-muted/40 rounded-lg flex items-center justify-between">
+                                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">Lead Time de Mercado (Alvo)</p>
+                                                    <p className="text-xl font-bold text-slate-800">{(selectedUnit.leadTime ?? 0).toFixed(0)} dias</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-4 gap-4">
+                                        <div className="p-3 bg-blue-500/5 rounded-lg border border-blue-500/10">
+                                            <p className="text-[10px] text-muted-foreground uppercase font-bold">Preço Vitrine Atual</p>
+                                            <p className="text-lg font-bold text-blue-600">
+                                                R$ {(selectedUnit.currentPrice ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                                             </p>
-                                            <Badge variant="outline" className="text-xs">
-                                                {(dialogMetrics?.percentAchieved ?? 0).toFixed(0)}% da Meta
+                                        </div>
+                                        <div className="p-3 bg-purple-500/5 rounded-lg border border-purple-500/10">
+                                            <p className="text-[10px] text-muted-foreground uppercase font-bold">Variação Sugerida</p>
+                                            <p className={`text-lg font-bold ${((selectedUnit.suggestedPrice ?? 0) - (selectedUnit.currentPrice ?? 0)) > 0
+                                                ? 'text-success'
+                                                : 'text-destructive'
+                                                }`}>
+                                                {((selectedUnit.currentPrice ?? 0) > 0
+                                                    ? (((selectedUnit.suggestedPrice ?? 0) - (selectedUnit.currentPrice ?? 0)) / (selectedUnit.currentPrice ?? 1) * 100).toFixed(1)
+                                                    : 0
+                                                )}%
+                                            </p>
+                                        </div>
+                                        <div className="p-3 bg-primary/5 rounded-lg border border-primary/10">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <CheckCircle className="h-3 w-3 text-primary" />
+                                                <p className="text-[10px] text-muted-foreground uppercase font-bold">Noites Vendidas</p>
+                                            </div>
+                                            <p className="text-lg font-bold">{dialogMetrics?.nightsSold ?? 0} noites</p>
+                                        </div>
+                                        <div className="p-3 bg-orange-500/5 rounded-lg border border-orange-500/10">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Activity className="h-3 w-3 text-orange-500" />
+                                                <p className="text-[10px] text-muted-foreground uppercase font-bold">Venda Efetiva</p>
+                                            </div>
+                                            <p className="text-lg font-bold text-orange-600">{dialogMetrics?.nightsForEffectiveSale ?? 0} diárias</p>
+                                        </div>
+                                    </div>
+
+                                    {/* CALENDAR SECTION */}
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between items-center border-b pb-1">
+                                            <h4 className="text-sm font-semibold text-primary uppercase tracking-wider">
+                                                Visão de Disponibilidade
+                                            </h4>
+                                            <Badge variant="outline" className="text-[10px]">
+                                                {dialogMetrics?.monthLabel ?? ''}
                                             </Badge>
                                         </div>
-                                        <Progress value={Math.min(dialogMetrics?.percentAchieved ?? 0, 100)} className="h-1 mt-2" />
+
+                                        <div className="space-y-3 px-1">
+                                            {selectedUnit && rawData.find(d => d.propriedade.idpropriedade === selectedUnit.id) && periods.length > 0 ? (
+                                                <AvailabilityCalendar
+                                                    unitId={selectedUnit.id}
+                                                    rawData={rawData}
+                                                    periods={periods}
+                                                    selectedPeriodId={
+                                                        (selectedUnit as any).targetPeriodId ||
+                                                        (dialogMetrics ? periods.find(p => p.type === 'month' && p.startDate.startsWith(`${dialogMetrics.year}-${String(dialogMetrics.monthOneBased).padStart(2, '0')}`))?.id : null) ||
+                                                        periods.find(p => p.type === 'month' && p.endDate >= new Date().toISOString())?.id || 
+                                                        periods[0].id
+                                                    }
+                                                    pracaSeasonalityMap={pracaSeasonalityMap}
+                                                    fallbackYear={dialogMetrics?.year}
+                                                    fallbackMonth={dialogMetrics?.monthOneBased}
+                                                />
+                                            ) : (
+                                                <p className="text-sm text-muted-foreground italic my-4 text-center">Carregando calendário...</p>
+                                            )}
+                                        </div>
+                                        <p className="text-[10px] text-center text-muted-foreground italic">
+                                            * Calendário focado na janela de compra (Lead Time de {(selectedUnit.leadTime ?? 0).toFixed(0)} dias).
+                                        </p>
                                     </div>
 
-                                    <div className="grid grid-cols-1 mt-3 gap-3">
-                                        <div className="p-4 bg-muted/40 rounded-lg flex items-center justify-between">
-                                            <p className="text-[10px] text-muted-foreground uppercase font-bold">Lead Time de Mercado (Alvo)</p>
-                                            <p className="text-xl font-bold text-slate-800">{(selectedUnit.leadTime ?? 0).toFixed(0)} dias</p>
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-semibold border-b pb-1 text-primary">Estratégia Recomendada</h4>
+                                        <div className="mt-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                                            <p className="text-xs font-bold text-primary uppercase mb-1">Ação:</p>
+                                            <p className="text-sm font-semibold">{selectedUnit.suggestedAction ?? "N/A"}</p>
+                                            <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+                                                {(selectedUnit.suggestedAction ?? "") === "TETO 18 NOITES - MANTER ADR"
+                                                    ? "A unidade já atingiu o teto de ocupação estratégica. O foco agora é manter o preço alto para maximizar a receita das noites restantes."
+                                                    : "O preço sugerido de R$ " + (selectedUnit.suggestedPrice ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + " visa atrair reservas na janela de " + (selectedUnit.leadTime ?? 0).toFixed(0) + " dias, onde ainda há disponibilidade."}
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div className="grid grid-cols-4 gap-4">
-                                <div className="p-3 bg-blue-500/5 rounded-lg border border-blue-500/10">
-                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">Preço Vitrine Atual</p>
-                                    <p className="text-lg font-bold text-blue-600">
-                                        R$ {(selectedUnit.currentPrice ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                                    </p>
+                                <div className="flex gap-3 pt-4 border-t sticky bottom-0 bg-background pb-2 z-20">
+                                    <Button className="flex-1" asChild>
+                                        <Link href="/pricing">Executar Mudança</Link>
+                                    </Button>
+                                    <Button variant="outline" onClick={() => setSelectedUnit(null)}>
+                                        Fechar
+                                    </Button>
                                 </div>
-                                <div className="p-3 bg-purple-500/5 rounded-lg border border-purple-500/10">
-                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">Variação Sugerida</p>
-                                    <p className={`text-lg font-bold ${((selectedUnit.suggestedPrice ?? 0) - (selectedUnit.currentPrice ?? 0)) > 0
-                                        ? 'text-success'
-                                        : 'text-destructive'
-                                        }`}>
-                                        {((selectedUnit.currentPrice ?? 0) > 0
-                                            ? (((selectedUnit.suggestedPrice ?? 0) - (selectedUnit.currentPrice ?? 0)) / (selectedUnit.currentPrice ?? 1) * 100).toFixed(1)
-                                            : 0
-                                        )}%
-                                    </p>
-                                </div>
-                                <div className="p-3 bg-primary/5 rounded-lg border border-primary/10">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <CheckCircle className="h-3 w-3 text-primary" />
-                                        <p className="text-[10px] text-muted-foreground uppercase font-bold">Noites Vendidas</p>
-                                    </div>
-                                    <p className="text-lg font-bold">{dialogMetrics?.nightsSold ?? 0} noites</p>
-                                </div>
-                                <div className="p-3 bg-orange-500/5 rounded-lg border border-orange-500/10">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <Activity className="h-3 w-3 text-orange-500" />
-                                        <p className="text-[10px] text-muted-foreground uppercase font-bold">Venda Efetiva</p>
-                                    </div>
-                                    <p className="text-lg font-bold text-orange-600">{dialogMetrics?.nightsForEffectiveSale ?? 0} diárias</p>
-                                </div>
-                            </div>
+                            </TabsContent>
 
-                            {/* CALENDAR SECTION */}
-                            <div className="space-y-3">
-                                <div className="flex justify-between items-center border-b pb-1">
-                                    <h4 className="text-sm font-semibold text-primary uppercase tracking-wider">
-                                        Visão de Disponibilidade
-                                    </h4>
-                                    <Badge variant="outline" className="text-[10px]">
-                                        {dialogMetrics?.monthLabel ?? ''}
-                                    </Badge>
-                                </div>
-
-                                {/* NEW CALENDAR SECTION */}
-                                <div className="space-y-3 px-1">
-                                    {selectedUnit && rawData.find(d => d.propriedade.idpropriedade === selectedUnit.id) && periods.length > 0 ? (
-                                        <AvailabilityCalendar
+                            <TabsContent value="mercado" className="space-y-6 pt-2">
+                                <div className="space-y-6 py-4 overflow-y-auto max-h-[70vh] pr-2">
+                                    <div className="grid grid-cols-1 gap-4">
+                                        {/* Simple Market View - External Competitors */}
+                                        <CompetitorAnalysisCard
                                             unitId={selectedUnit.id}
-                                            rawData={rawData}
-                                            periods={periods}
-                                            selectedPeriodId={
-                                                (selectedUnit as any).targetPeriodId || periods.find(p => p.type === 'month' && p.endDate >= new Date().toISOString())?.id || periods[0].id
-                                            }
-                                            pracaSeasonalityMap={pracaSeasonalityMap}
+                                            unitName={selectedUnit.name}
+                                            currentPrice={selectedUnit.currentPrice}
                                         />
-                                    ) : (
-                                        <p className="text-sm text-muted-foreground italic my-4 text-center">Carregando calendário...</p>
-                                    )}
-                                </div>
-                                <p className="text-[10px] text-center text-muted-foreground italic">
-                                    * Calendário focado na janela de compra (Lead Time de {(selectedUnit.leadTime ?? 0).toFixed(0)} dias).
-                                </p>
-                            </div>
+                                        {(() => {
+                                            const rawItem = rawData.find(d => d.propriedade.idpropriedade === selectedUnit.id);
+                                            const propData = rawItem?.propriedade;
+                                            const lat = propData?.latitude;
+                                            const lon = propData?.longitude;
+                                            const guests = propData?._i_maxguests || 2;
+                                            
+                                            const tMonth = selectedUnit.mesAlvo || new Date().getMonth() + 1;
+                                            const tYear = selectedUnit.anoAlvo || new Date().getFullYear();
+                                            const startDate = `${tYear}-${String(tMonth).padStart(2, '0')}-01`;
+                                            const endDate = `${tYear}-${String(tMonth).padStart(2, '0')}-${String(new Date(tYear, tMonth, 0).getDate()).padStart(2, '0')}`;
+                                            
+                                            if (!lat || !lon) {
+                                                return (
+                                                    <div className="p-4 bg-amber-50/50 rounded-xl border border-amber-200/60 text-center">
+                                                        <h5 className="text-sm font-bold text-amber-800 uppercase mb-2">Ponto Cego de Geolocalização</h5>
+                                                        <p className="text-xs text-amber-700/80 leading-relaxed">
+                                                            A unidade <strong>{selectedUnit.name}</strong> não possui coordenadas exatas (Latitude/Longitude) em seu cadastro.
+                                                            Configure estas métricas para liberar a pesquisa competitiva geográfica regional para este mês alvo.
+                                                        </p>
+                                                    </div>
+                                                )
+                                            }
 
-                            <div className="space-y-3">
-                                <h4 className="text-sm font-semibold border-b pb-1 text-primary">Estratégia Recomendada</h4>
-                                <div className="mt-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                                    <p className="text-xs font-bold text-primary uppercase mb-1">Ação:</p>
-                                    <p className="text-sm font-semibold">{selectedUnit.suggestedAction ?? "N/A"}</p>
-                                    <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
-                                        {(selectedUnit.suggestedAction ?? "") === "TETO 18 NOITES - MANTER ADR"
-                                            ? "A unidade já atingiu o teto de ocupação estratégica. O foco agora é manter o preço alto para maximizar a receita das noites restantes."
-                                            : "O preço sugerido de R$ " + (selectedUnit.suggestedPrice ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + " visa atrair reservas na janela de " + (selectedUnit.leadTime ?? 0).toFixed(0) + " dias, onde ainda há disponibilidade."}
-                                    </p>
+                                            return (
+                                                <SalesMarketVision 
+                                                    lat={lat} 
+                                                    lon={lon} 
+                                                    guests={guests} 
+                                                    startDate={startDate} 
+                                                    endDate={endDate}
+                                                    unitName={selectedUnit.name}
+                                                    unitRates={rawItem?.tarifario || []}
+                                                    unitBasePrice={selectedUnit.currentPrice || 0}
+                                                />
+                                            )
+                                        })()}
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="flex gap-3 pt-4 border-t sticky bottom-0 bg-background pb-2">
-                                <Button className="flex-1" asChild>
-                                    <Link href="/pricing">Executar Mudança</Link>
-                                </Button>
-                                <Button variant="outline" onClick={() => setSelectedUnit(null)}>
-                                    Fechar
-                                </Button>
-                            </div>
-                        </div >
-                    )
-                    }
+                                <div className="flex gap-3 pt-4 border-t sticky bottom-0 bg-background pb-2 z-20">
+                                    <Button className="flex-1" asChild>
+                                        <Link href="/pricing">Executar Mudança</Link>
+                                    </Button>
+                                    <Button variant="outline" onClick={() => setSelectedUnit(null)}>
+                                        Fechar
+                                    </Button>
+                                </div>
+                            </TabsContent>
+                        </Tabs>
+                    )}
                 </DialogContent >
             </Dialog >
         </div >

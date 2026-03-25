@@ -13,7 +13,7 @@ interface KPICardsProps {
 
 export function MarketKPICards({ averagePrice, medianPrice, totalCompetitors, averageRating, averageGuests }: KPICardsProps) {
     return (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4">
             {/* Average Price */}
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -21,8 +21,8 @@ export function MarketKPICards({ averagePrice, medianPrice, totalCompetitors, av
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">
-                        R$ {averagePrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    <div className="text-xl lg:text-2xl font-bold whitespace-nowrap tracking-tight">
+                        R$ {averagePrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <div className="flex items-center gap-2 mt-1">
                         <p className="text-xs text-muted-foreground">Por noite</p>
@@ -43,8 +43,8 @@ export function MarketKPICards({ averagePrice, medianPrice, totalCompetitors, av
                     <BarChart3 className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">
-                        R$ {medianPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    <div className="text-xl lg:text-2xl font-bold whitespace-nowrap tracking-tight">
+                        R$ {medianPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <p className="text-xs text-muted-foreground">Airbnb - Por noite</p>
                 </CardContent>
@@ -57,7 +57,7 @@ export function MarketKPICards({ averagePrice, medianPrice, totalCompetitors, av
                     <Users className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">
+                    <div className="text-xl lg:text-2xl font-bold">
                         {totalCompetitors.toLocaleString('pt-BR')}
                     </div>
                     <p className="text-xs text-muted-foreground">Nesta região</p>
@@ -71,7 +71,7 @@ export function MarketKPICards({ averagePrice, medianPrice, totalCompetitors, av
                     <Star className="h-4 w-4 text-yellow-500" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">
+                    <div className="text-xl lg:text-2xl font-bold">
                         {averageRating.toFixed(2)}
                     </div>
                     <p className="text-xs text-muted-foreground">Estrelas (Airbnb)</p>

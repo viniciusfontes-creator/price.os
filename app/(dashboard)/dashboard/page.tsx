@@ -7,7 +7,6 @@ import { BarChart3, Database, RefreshCw, Loader2 } from "lucide-react"
 import { AnalyticsCharts } from "@/components/analytics-charts"
 import { DailySalesRanking } from "@/components/daily-sales-ranking"
 import { PartnernameSalesRanking } from "@/components/partnername-sales-ranking"
-import { GeminiChat } from "@/components/gemini-chat"
 import { FilterBar } from "@/components/filters/filter-bar"
 import { useGlobalFilters } from "@/contexts/global-filters-context"
 import { applyGlobalFilters, getFilterOptions } from "@/lib/filter-utils"
@@ -109,8 +108,8 @@ export default function Dashboard() {
           title="Mapa de Ocupação"
         />
       )}
-
-      <GeminiChat />
+      
+      {/* Onboarding / Ajuda da Página migrado para layout global */}
     </div>
   )
 }

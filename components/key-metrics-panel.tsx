@@ -148,7 +148,6 @@ function MetricDetailModal({ isOpen, onClose, type, data }: MetricDetailModalPro
         return (
           <div>
             <h3 className="text-lg font-semibold mb-4 text-foreground">Meta do Mês - Data de Checkout</h3>
-            <p className="text-sm text-muted-foreground mb-4">Clique em uma unidade para abrir a Central de Comando</p>
 
             {/* Status Count - Clickable Filters */}
             <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 sm:gap-4 mb-6">
@@ -189,12 +188,8 @@ function MetricDetailModal({ isOpen, onClose, type, data }: MetricDetailModalPro
               {filteredUnidades?.map((unidade: any, index: number) => (
                 <div
                   key={index}
-                  className={`p-4 rounded-lg border-2 cursor-pointer transition-all hover:shadow-md ${unidade.percentual >= 100 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+                  className={`p-4 rounded-lg border-2 ${unidade.percentual >= 100 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
                     }`}
-                  onClick={() => {
-                    onClose()
-                    router.push(`/inventory/availability?tab=command-center&propertyId=${unidade.idpropriedade}`)
-                  }}
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex items-center gap-2">

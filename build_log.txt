@@ -1,0 +1,97 @@
+
+> qavi-dashboard@1.1.0 build
+> next build
+
+  ▲ Next.js 14.2.35
+  - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Skipping validation of types
+   Linting ...
+   Collecting page data ...
+   Generating static pages (0/38) ...
+[API] Error fetching competitors from Supabase: B [Error]: Dynamic server usage: Route /api/competitors couldn't be rendered statically because it used `request.url`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at V (/Users/viniciusflucena/Downloads/Price.OS/node_modules/next/dist/compiled/next-server/app-route.runtime.prod.js:6:21778)
+    at Object.get (/Users/viniciusflucena/Downloads/Price.OS/node_modules/next/dist/compiled/next-server/app-route.runtime.prod.js:6:29465)
+    at p (/Users/viniciusflucena/Downloads/Price.OS/.next/server/app/api/competitors/route.js:1:585)
+    at /Users/viniciusflucena/Downloads/Price.OS/node_modules/next/dist/compiled/next-server/app-route.runtime.prod.js:6:38417
+    at /Users/viniciusflucena/Downloads/Price.OS/node_modules/next/dist/server/lib/trace/tracer.js:140:36
+    at NoopContextManager.with (/Users/viniciusflucena/Downloads/Price.OS/node_modules/@opentelemetry/api/build/src/context/NoopContextManager.js:25:19)
+    at ContextAPI.with (/Users/viniciusflucena/Downloads/Price.OS/node_modules/@opentelemetry/api/build/src/api/context.js:60:46)
+    at NoopTracer.startActiveSpan (/Users/viniciusflucena/Downloads/Price.OS/node_modules/@opentelemetry/api/build/src/trace/NoopTracer.js:65:31)
+    at ProxyTracer.startActiveSpan (/Users/viniciusflucena/Downloads/Price.OS/node_modules/@opentelemetry/api/build/src/trace/ProxyTracer.js:36:24)
+    at /Users/viniciusflucena/Downloads/Price.OS/node_modules/next/dist/server/lib/trace/tracer.js:122:103 {
+  description: "Route /api/competitors couldn't be rendered statically because it used `request.url`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+   Generating static pages (9/38) 
+(node:25754) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+   Generating static pages (18/38) 
+   Generating static pages (28/38) 
+ ✓ Generating static pages (38/38)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                        Size     First Load JS
+┌ ○ /_not-found                                    880 B          88.4 kB
+├ ƒ /api/auth/[...nextauth]                        0 B                0 B
+├ ƒ /api/auth/onboarding                           0 B                0 B
+├ ƒ /api/auth/onboarding/status                    0 B                0 B
+├ ƒ /api/auth/profile                              0 B                0 B
+├ ƒ /api/baskets                                   0 B                0 B
+├ ƒ /api/baskets/items                             0 B                0 B
+├ ƒ /api/baskets/scrape                            0 B                0 B
+├ ƒ /api/bigquery/data                             0 B                0 B
+├ ƒ /api/competitors                               0 B                0 B
+├ ƒ /api/competitors/add-url                       0 B                0 B
+├ ƒ /api/competitors/basket                        0 B                0 B
+├ ○ /api/competitors/locations                     0 B                0 B
+├ ƒ /api/competitors/reuse-url                     0 B                0 B
+├ ƒ /api/cotacoes                                  0 B                0 B
+├ ƒ /api/dashboard/data                            0 B                0 B
+├ ƒ /api/data/properties                           0 B                0 B
+├ ƒ /api/gemini                                    0 B                0 B
+├ ƒ /api/intelligence/chat                         0 B                0 B
+├ ƒ /api/intelligence/confirm                      0 B                0 B
+├ ƒ /api/intelligence/conversations                0 B                0 B
+├ ƒ /api/intelligence/conversations/[id]           0 B                0 B
+├ ƒ /api/intelligence/conversations/[id]/messages  0 B                0 B
+├ ƒ /api/places/autocomplete                       0 B                0 B
+├ ƒ /api/places/details                            0 B                0 B
+├ ƒ /api/pricing-intelligence                      0 B                0 B
+├ ƒ /api/pricing/periods                           0 B                0 B
+├ ƒ /api/pricing/seasonalities                     0 B                0 B
+├ ○ /api/properties                                0 B                0 B
+├ ƒ /api/scraper/trigger                           0 B                0 B
+├ ○ /command-center                                766 B          95.1 kB
+├ ○ /concorrencia                                  12.1 kB         284 kB
+├ ○ /correlacao                                    24.7 kB         314 kB
+├ ○ /dashboard                                     20.6 kB         313 kB
+├ ○ /inteligencia                                  771 B          95.1 kB
+├ ○ /intelligence                                  10.7 kB         136 kB
+├ ○ /inventory                                     153 B          87.7 kB
+├ ○ /inventory/availability                        12 kB           250 kB
+├ ○ /login                                         4.89 kB         109 kB
+├ ○ /onboarding                                    4.3 kB          108 kB
+├ ○ /propriedades/custos                           6.91 kB         170 kB
+├ ○ /propriedades/pricing                          23 kB           335 kB
+├ ○ /propriedades/racionalizacao                   7.86 kB         171 kB
+├ ○ /revenue                                       769 B          95.1 kB
+├ ○ /sales-demand                                  11.8 kB         243 kB
+├ ○ /select-view                                   7.58 kB        95.1 kB
+├ ○ /system                                        6.04 kB         100 kB
+├ ƒ /unidade/[id]                                  5.43 kB        99.7 kB
+└ ○ /vendas                                        15.4 kB         336 kB
++ First Load JS shared by all                      87.5 kB
+  ├ chunks/2117-ee17fee5fe29add6.js                31.9 kB
+  ├ chunks/fd9d1056-ca04a0a7bb9349a7.js            53.6 kB
+  └ other shared chunks (total)                    1.98 kB
+
+
+ƒ Middleware                                       48.4 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

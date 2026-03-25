@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase-client'
+import { getSupabaseAdmin } from '@/lib/supabase-server'
+import { supabase as supabaseAnon } from '@/lib/supabase-client'
 
 export async function GET(request: Request) {
     try {
+        // Use service_role (server-side) for longer timeout (120s vs 3s anon)
+        const supabase = getSupabaseAdmin() || supabaseAnon
         const { searchParams } = new URL(request.url)
         const location = searchParams.get('location') // query text
         const lat = searchParams.get('lat')
@@ -25,7 +28,7 @@ export async function GET(request: Request) {
             const latitude = parseFloat(lat)
             const longitude = parseFloat(lon)
 
-            console.log('[API] Calling RPC buscar_anuncios_geo_v2 with params:', {
+            console.log('[API] Calling RPC buscar_concorrentes_v3 with params:', {
                 latitude,
                 longitude,
                 radius,
@@ -34,15 +37,13 @@ export async function GET(request: Request) {
                 endDate
             })
 
-            const { data: rpcData, error: rpcError } = await supabase.rpc('buscar_anuncios_geo_v2', {
+            const { data: rpcData, error: rpcError } = await supabase.rpc('buscar_concorrentes_v3', {
                 p_latitude: latitude,
                 p_longitude: longitude,
                 p_raio_km: radius,
                 p_hospedes: guestsMin,
                 p_start_date: startDate || null,
-                p_end_date: endDate || null,
-                p_limit: limit,
-                p_offset: offset
+                p_end_date: endDate || null
             })
 
             if (rpcError) {
@@ -56,28 +57,6 @@ export async function GET(request: Request) {
 
             data = rpcData
             error = rpcError
-            
-            // Flatten new JSON representation if historico exists
-            if (data && data.length > 0 && data[0].historico !== undefined) {
-                const flatData: any[] = []
-                data.forEach((p: any) => {
-                    const { historico, ...propInfo } = p
-                    if (Array.isArray(historico)) {
-                        historico.forEach((h: any) => {
-                            flatData.push({ ...propInfo, ...h })
-                        })
-                    } else if (historico) {
-                         // Fallback just in case PostgREST returns stringified JSON
-                         try {
-                             const parseh = typeof historico === 'string' ? JSON.parse(historico) : []
-                             parseh.forEach((h: any) => {
-                                flatData.push({ ...propInfo, ...h })
-                            })
-                         } catch (e) {}
-                    }
-                })
-                data = flatData
-            }
 
             // Apply max guest filter client-side (RPC only supports min)
             if (data && guestsMax < 999) {
@@ -145,117 +124,199 @@ export async function GET(request: Request) {
             return String(item.id_numerica || item.id);
         };
 
-        // Group by extracted Airbnb ID to handle duplicates
-        const groups: Record<string, any[]> = {}
-        rawData.forEach(item => {
-            const key = extractAirbnbId(item)
-            if (!groups[key]) groups[key] = []
-            groups[key].push({ ...item, _extracted_airbnb_id: key }) // Store extracted ID
-        })
+        let processedData: any[] = []
+        let stats: any = null
 
-        const processedData = Object.values(groups).map(group => {
-            // Sort group by data_extracao descending to find the latest
-            const sortedGroup = group.sort((a, b) =>
-                new Date(b.data_extracao).getTime() - new Date(a.data_extracao).getTime()
-            )
+        // Check if data comes from v3 (pre-aggregated: has preco_por_noite directly)
+        const isPreAggregated = rawData.length > 0 && rawData[0].preco_por_noite !== undefined && rawData[0].checkin_dates !== undefined
 
-            const latest = sortedGroup[0]
-            const previous = sortedGroup.length > 1 ? sortedGroup[1] : null
+        if (isPreAggregated) {
+            // ======= V3 PRE-AGGREGATED PATH =======
+            // Each row = 1 property with all data already computed in SQL
+            processedData = rawData.map((item: any) => {
+                const airbnbId = extractAirbnbId(item)
+                const checkinData = Array.isArray(item.checkin_dates) ? item.checkin_dates : 
+                    (typeof item.checkin_dates === 'string' ? JSON.parse(item.checkin_dates) : item.checkin_dates || [])
+                const histData = Array.isArray(item.historico_precos) ? item.historico_precos :
+                    (typeof item.historico_precos === 'string' ? JSON.parse(item.historico_precos) : item.historico_precos || [])
+                
+                // Build history array from checkin_dates for compatibility with frontend
+                const history = checkinData.map((h: any) => ({
+                    id_numerica: airbnbId,
+                    data_extracao: h.extracao,
+                    checkin_formatado: h.checkin,
+                    preco_total: h.preco_total,
+                    quantidade_noites: h.noites,
+                    preco_por_noite: h.ppn,
+                    url_anuncio: item.url_anuncio,
+                    nome_anuncio: item.nome_anuncio,
+                    tipo_propriedade: item.tipo_propriedade,
+                }))
+                
+                return {
+                    ...item,
+                    id: airbnbId,
+                    id_numerica: airbnbId,
+                    _extracted_airbnb_id: airbnbId,
+                    dist_km: item.distancia_km,
+                    preco_por_noite: item.preco_por_noite || 0,
+                    trend_percent: item.trend_percent || 0,
+                    history,
+                    historico_precos: histData.map((h: any) => ({
+                        data: h.data,
+                        preco: h.preco
+                    }))
+                }
+            })
 
-            const latestPrice = latest.preco_total && latest.quantidade_noites
-                ? parseFloat((Number(latest.preco_total) / Number(latest.quantidade_noites)).toFixed(2))
-                : 0
+            // Stats calculation from pre-aggregated data
+            if (includeStats && rawData.length > 0) {
+                // Extract all checkin points from all properties
+                const uniqueDailyPoints: Record<string, any> = {}
 
-            let trendPercent = 0
-            if (previous) {
-                const previousPrice = previous.preco_total && previous.quantidade_noites
-                    ? parseFloat((Number(previous.preco_total) / Number(previous.quantidade_noites)).toFixed(2))
+                rawData.forEach((item: any) => {
+                    const listingId = extractAirbnbId(item)
+                    const checkinData = Array.isArray(item.checkin_dates) ? item.checkin_dates :
+                        (typeof item.checkin_dates === 'string' ? JSON.parse(item.checkin_dates) : item.checkin_dates || [])
+
+                    checkinData.forEach((h: any) => {
+                        if (!h.checkin) return
+                        const date = h.checkin.toString().split('T')[0]
+                        const uniqueKey = `${listingId}_${date}`
+                        const extractionTime = h.extracao ? new Date(h.extracao).getTime() : 0
+                        const currentPoint = uniqueDailyPoints[uniqueKey]
+
+                        if (!currentPoint || extractionTime > currentPoint._extractionTimestamp) {
+                            uniqueDailyPoints[uniqueKey] = {
+                                _price: h.ppn,
+                                _extractionTimestamp: extractionTime,
+                                _date: date,
+                                _listingId: listingId
+                            }
+                        }
+                    })
+                })
+
+                // Aggregate by date for chart
+                const dateGroups: Record<string, { sum: number, count: number, listings: Record<string, number> }> = {}
+
+                Object.values(uniqueDailyPoints).forEach((point: any) => {
+                    const date = point._date
+                    const price = point._price
+                    if (!price) return
+
+                    if (!dateGroups[date]) {
+                        dateGroups[date] = { sum: 0, count: 0, listings: {} }
+                    }
+                    dateGroups[date].sum += price
+                    dateGroups[date].count += 1
+                    if (point._listingId) {
+                        dateGroups[date].listings[`listing_${point._listingId}`] = price
+                    }
+                })
+
+                stats = Object.entries(dateGroups).map(([date, val]) => ({
+                    date,
+                    avgPrice: parseFloat((val.sum / val.count).toFixed(2)),
+                    ...val.listings
+                })).sort((a, b) => a.date.localeCompare(b.date))
+            }
+        } else {
+            // ======= LEGACY FLAT DATA PATH (fallback for traditional query) =======
+            // Group by extracted Airbnb ID to handle duplicates
+            const groups: Record<string, any[]> = {}
+            rawData.forEach(item => {
+                const key = extractAirbnbId(item)
+                if (!groups[key]) groups[key] = []
+                groups[key].push({ ...item, _extracted_airbnb_id: key })
+            })
+
+            processedData = Object.values(groups).map(group => {
+                const sortedGroup = group.sort((a, b) =>
+                    new Date(b.data_extracao).getTime() - new Date(a.data_extracao).getTime()
+                )
+
+                const latest = sortedGroup[0]
+                const previous = sortedGroup.length > 1 ? sortedGroup[1] : null
+
+                const latestPrice = latest.preco_total && latest.quantidade_noites
+                    ? parseFloat((Number(latest.preco_total) / Number(latest.quantidade_noites)).toFixed(2))
                     : 0
 
-                if (previousPrice > 0) {
-                    trendPercent = parseFloat((((latestPrice - previousPrice) / previousPrice) * 100).toFixed(1))
-                }
-            }
-
-            return {
-                ...latest,
-                id: latest.id?.toString(),
-                id_numerica: latest._extracted_airbnb_id, // Use extracted ID (precision-safe)
-                dist_km: latest.distancia_km,
-                preco_por_noite: latestPrice,
-                trend_percent: trendPercent,
-                history: sortedGroup,
-                historico_precos: sortedGroup.map((item: any) => ({
-                    data: item.data_extracao,
-                    preco: Number(item.preco_total) / Number(item.quantidade_noites)
-                }))
-            }
-        })
-
-        // Stats calculation (Date Range Curve)
-        // We need (Listing + Checkin) uniqueness here, not just Listing uniqueness.
-        // We want to show the price evolution over the requested Check-in Range.
-        let stats = null
-        if (includeStats && rawData && rawData.length > 0) {
-            // 1. Resolve Latest Extraction per (Listing + Checkin)
-            // Map Key: listingID_checkinDate
-            const uniqueDailyPoints: Record<string, any> = {}
-
-            rawData.forEach(item => {
-                // valid checkin date
-                if (!item.checkin_formatado) return
-                const date = item.checkin_formatado.toString().split('T')[0]
-                const listingId = extractAirbnbId(item)
-
-                const uniqueKey = `${listingId}_${date}`
-                const currentPoint = uniqueDailyPoints[uniqueKey]
-
-                const extractionDate = item.data_extracao ? new Date(item.data_extracao).getTime() : 0
-
-                if (!currentPoint || extractionDate > currentPoint._extractionTimestamp) {
-                    // Calculate normalized price
-                    const price = (item.preco_total && item.quantidade_noites)
-                        ? parseFloat((Number(item.preco_total) / Number(item.quantidade_noites)).toFixed(2))
-                        : item.preco_por_noite
-
-                    uniqueDailyPoints[uniqueKey] = {
-                        ...item,
-                        _price: price,
-                        _extractionTimestamp: extractionDate,
-                        _date: date,
-                        _listingId: listingId
+                let trendPercent = 0
+                if (previous) {
+                    const previousPrice = previous.preco_total && previous.quantidade_noites
+                        ? parseFloat((Number(previous.preco_total) / Number(previous.quantidade_noites)).toFixed(2))
+                        : 0
+                    if (previousPrice > 0) {
+                        trendPercent = parseFloat((((latestPrice - previousPrice) / previousPrice) * 100).toFixed(1))
                     }
                 }
-            })
 
-            // 2. Aggregate by Date for the Chart
-            const dateGroups: Record<string, { sum: number, count: number, listings: Record<string, number> }> = {}
-
-            Object.values(uniqueDailyPoints).forEach((point: any) => {
-                const date = point._date
-                const price = point._price
-
-                if (!price) return
-
-                if (!dateGroups[date]) {
-                    dateGroups[date] = { sum: 0, count: 0, listings: {} }
-                }
-
-                dateGroups[date].sum += price
-                dateGroups[date].count += 1
-
-                // Add listing breakdown for interactivity
-                if (point._listingId) {
-                    dateGroups[date].listings[`listing_${point._listingId}`] = price
+                return {
+                    ...latest,
+                    id: latest.id?.toString(),
+                    id_numerica: latest._extracted_airbnb_id,
+                    dist_km: latest.distancia_km,
+                    preco_por_noite: latestPrice,
+                    trend_percent: trendPercent,
+                    history: sortedGroup,
+                    historico_precos: sortedGroup.map((item: any) => ({
+                        data: item.data_extracao,
+                        preco: Number(item.preco_total) / Number(item.quantidade_noites)
+                    }))
                 }
             })
 
-            stats = Object.entries(dateGroups).map(([date, val]) => ({
-                date,
-                avgPrice: parseFloat((val.sum / val.count).toFixed(2)),
-                ...val.listings
-            })).sort((a, b) => a.date.localeCompare(b.date))
+            // Stats calculation (Date Range Curve)
+            if (includeStats && rawData && rawData.length > 0) {
+                const uniqueDailyPoints: Record<string, any> = {}
+
+                rawData.forEach(item => {
+                    if (!item.checkin_formatado) return
+                    const date = item.checkin_formatado.toString().split('T')[0]
+                    const listingId = extractAirbnbId(item)
+                    const uniqueKey = `${listingId}_${date}`
+                    const currentPoint = uniqueDailyPoints[uniqueKey]
+                    const extractionDate = item.data_extracao ? new Date(item.data_extracao).getTime() : 0
+
+                    if (!currentPoint || extractionDate > currentPoint._extractionTimestamp) {
+                        const price = (item.preco_total && item.quantidade_noites)
+                            ? parseFloat((Number(item.preco_total) / Number(item.quantidade_noites)).toFixed(2))
+                            : item.preco_por_noite
+                        uniqueDailyPoints[uniqueKey] = {
+                            ...item,
+                            _price: price,
+                            _extractionTimestamp: extractionDate,
+                            _date: date,
+                            _listingId: listingId
+                        }
+                    }
+                })
+
+                const dateGroups: Record<string, { sum: number, count: number, listings: Record<string, number> }> = {}
+                Object.values(uniqueDailyPoints).forEach((point: any) => {
+                    const date = point._date
+                    const price = point._price
+                    if (!price) return
+                    if (!dateGroups[date]) {
+                        dateGroups[date] = { sum: 0, count: 0, listings: {} }
+                    }
+                    dateGroups[date].sum += price
+                    dateGroups[date].count += 1
+                    if (point._listingId) {
+                        dateGroups[date].listings[`listing_${point._listingId}`] = price
+                    }
+                })
+
+                stats = Object.entries(dateGroups).map(([date, val]) => ({
+                    date,
+                    avgPrice: parseFloat((val.sum / val.count).toFixed(2)),
+                    ...val.listings
+                })).sort((a, b) => a.date.localeCompare(b.date))
+            }
         }
+
 
         return NextResponse.json(sanitizeBigInt({
             success: true,

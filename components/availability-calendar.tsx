@@ -26,6 +26,8 @@ interface AvailabilityCalendarProps {
     periods: PricingPeriod[];
     selectedPeriodId: string;
     pracaSeasonalityMap: Map<string, any>;
+    fallbackYear?: number;
+    fallbackMonth?: number; // 1-based (1=Jan, 12=Dec)
 }
 
 export function AvailabilityCalendar({
@@ -33,19 +35,29 @@ export function AvailabilityCalendar({
     rawData,
     periods,
     selectedPeriodId,
-    pracaSeasonalityMap
+    pracaSeasonalityMap,
+    fallbackYear,
+    fallbackMonth
 }: AvailabilityCalendarProps) {
     const rawUnit = rawData.find(d => d.propriedade.idpropriedade === unitId);
     if (!rawUnit) return null;
 
     const selectedPeriod = periods.find(p => p.id === selectedPeriodId);
-    if (!selectedPeriod) return null;
 
-    const endDateParts = selectedPeriod.endDate.split('-');
-    if (endDateParts.length < 3) return null;
+    let year: number;
+    let monthOneBased: number;
 
-    const year = parseInt(endDateParts[0]);
-    const monthOneBased = parseInt(endDateParts[1]);
+    if (selectedPeriod) {
+        const endDateParts = selectedPeriod.endDate.split('-');
+        if (endDateParts.length < 3) return null;
+        year = parseInt(endDateParts[0]);
+        monthOneBased = parseInt(endDateParts[1]);
+    } else if (fallbackYear && fallbackMonth) {
+        year = fallbackYear;
+        monthOneBased = fallbackMonth;
+    } else {
+        return null;
+    }
     const daysInMonth = new Date(year, monthOneBased, 0).getDate();
     const firstDay = new Date(year, monthOneBased - 1, 1).getDay();
 
@@ -66,7 +78,8 @@ export function AvailabilityCalendar({
     const savedSeas = pracaSeasonalityMap.get(praca);
 
     const eventDaysSet = new Set<string>();
-    if (selectedPeriod.type === "month" && savedSeas) {
+    const isMonthView = !selectedPeriod || selectedPeriod.type === "month";
+    if (isMonthView && savedSeas) {
         const eventsInSeasonality = periods.filter(p => {
             if (p.type !== "event") return false;
             if (!savedSeas.periods.some((sp: any) => sp.periodId === p.id)) return false;
@@ -189,7 +202,7 @@ export function AvailabilityCalendar({
                 while (currentDt < endDt) {
                     const dayStr = currentDt.toISOString().split('T')[0];
                     if (dayStr.startsWith(calendarYearMonth) && !eventDaysSet.has(dayStr)) {
-                        if (selectedPeriod.type === "event") {
+                        if (selectedPeriod?.type === "event") {
                             if (dayStr >= selectedPeriod.startDate && dayStr <= selectedPeriod.endDate) {
                                 validNightsInPeriod++;
                             }

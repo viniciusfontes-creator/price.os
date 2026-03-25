@@ -27,7 +27,7 @@ export const VIEW_CONFIGS: Record<ViewType, ViewConfig> = {
         icon: '🏢',
         color: '#4f46e5',
         gradient: 'from-indigo-500 to-blue-600',
-        allowedPages: ['/', '/dashboard', '/vendas', '/inventory/availability'],
+        allowedPages: ['/', '/dashboard', '/vendas', '/inventory/availability', '/intelligence'],
         bigqueryFilter: null, // No filter — consolidated view
     },
     'short-stay': {
@@ -40,7 +40,7 @@ export const VIEW_CONFIGS: Record<ViewType, ViewConfig> = {
         allowedPages: [
             '/', '/dashboard', '/vendas', '/inventory/availability',
             '/pricing', '/propriedades', '/propriedades/pricing', '/propriedades/custos', '/propriedades/racionalizacao',
-            '/sales-demand', '/concorrencia', '/correlacao',
+            '/sales-demand', '/concorrencia', '/correlacao', '/intelligence',
         ],
         bigqueryFilter: "empreendimento_pousada IN ('Short Stay', 'Alto Padrão')",
     },
@@ -54,7 +54,7 @@ export const VIEW_CONFIGS: Record<ViewType, ViewConfig> = {
         allowedPages: [
             '/', '/dashboard', '/vendas', '/inventory/availability',
             '/propriedades', '/propriedades/pricing', '/propriedades/custos', '/propriedades/racionalizacao',
-            '/sales-demand',
+            '/sales-demand', '/intelligence',
         ],
         bigqueryFilter: "empreendimento_pousada = 'Empreendimento'",
     },

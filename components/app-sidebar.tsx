@@ -14,6 +14,7 @@ import {
   Building2,
   Calculator,
   GitCompare,
+  BrainCircuit,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -126,6 +127,11 @@ const allMenuItems: MenuItem[] = [
         icon: LinkIcon,
       },
     ],
+  },
+  {
+    title: "Intelligence Hub",
+    href: "/intelligence",
+    icon: BrainCircuit,
   },
 ]
 

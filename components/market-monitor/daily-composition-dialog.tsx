@@ -106,7 +106,7 @@ export function DailyCompositionDialog({ open, onOpenChange, date, avgPrice, int
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
+            <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
                 <DialogHeader className="pb-2">
                     <DialogTitle className="flex flex-col gap-1">
                         <span>Composição do Preço</span>

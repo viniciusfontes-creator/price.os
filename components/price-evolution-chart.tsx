@@ -107,6 +107,14 @@ export function PriceEvolutionChart({ data, competitorMap = {}, onPointClick }: 
                                                             </span>
                                                         </div>
                                                     )}
+                                                    {dataPoint.myPrice !== undefined && (
+                                                        <div className="flex items-center justify-between mt-1 pt-1 border-t">
+                                                            <span className="font-bold text-sm text-green-600">Meu tarifário:</span>
+                                                            <span className="font-bold text-green-600 text-sm">
+                                                                R$ {dataPoint.myPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                            </span>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 {components.length > 0 && (
@@ -196,6 +204,29 @@ export function PriceEvolutionChart({ data, competitorMap = {}, onPointClick }: 
                                                 onPointClick?.(payload.payload);
                                             }
                                         }
+                                    }}
+                                />
+                            )}
+                            {data.some(d => d.myPrice !== undefined) && (
+                                <Line
+                                    type="monotone"
+                                    dataKey="myPrice"
+                                    name="Meu Tarifário"
+                                    stroke="#16a34a"
+                                    strokeWidth={3}
+                                    strokeDasharray="4 4"
+                                    connectNulls={true}
+                                    dot={{
+                                        r: 4,
+                                        strokeWidth: 2,
+                                        fill: '#fff',
+                                        cursor: 'pointer',
+                                    }}
+                                    activeDot={{
+                                        r: 8,
+                                        strokeWidth: 0,
+                                        fill: '#15803d',
+                                        cursor: 'pointer',
                                     }}
                                 />
                             )}

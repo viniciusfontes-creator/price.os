@@ -40,6 +40,7 @@ export function RacionalizacaoClient() {
 
     // --- Dialog Cesta (Criar/Editar) ---
     const [isBasketModalOpen, setIsBasketModalOpen] = useState(false)
+    const [basketToDelete, setBasketToDelete] = useState<any | null>(null)
     const [editingBasketId, setEditingBasketId] = useState<string | null>(null)
     const [basketForm, setBasketForm] = useState({
         name: "",
@@ -279,16 +280,18 @@ export function RacionalizacaoClient() {
     }
 
     const handleDeleteBasket = async () => {
-        if (!selectedBasket || !confirm(`Tem certeza que deseja APAGAR a cesta ${selectedBasket.name} e todas as suas correlações?`)) return
+        if (!basketToDelete) return
         setSaving(true)
         try {
-            await supabase.from('basket_items').delete().eq('basket_id', selectedBasket.id)
-            await supabase.from('basket_pricing_rules').delete().or(`dependent_basket_id.eq.${selectedBasket.id},base_basket_id.eq.${selectedBasket.id}`)
-            const { error } = await supabase.from('competitor_baskets').delete().eq('id', selectedBasket.id)
+            await supabase.from('basket_items').delete().eq('basket_id', basketToDelete.id)
+            await supabase.from('basket_pricing_rules').delete().or(`dependent_basket_id.eq.${basketToDelete.id},base_basket_id.eq.${basketToDelete.id}`)
+            const { error } = await supabase.from('competitor_baskets').delete().eq('id', basketToDelete.id)
             if (!error) {
-                setBaskets(baskets.filter(b => b.id !== selectedBasket.id))
-                setSelectedBasket(null)
-                alert("Cesta removida com sucesso!")
+                setBaskets(baskets.filter(b => b.id !== basketToDelete.id))
+                if (selectedBasket?.id === basketToDelete.id) {
+                    setSelectedBasket(null)
+                }
+                setBasketToDelete(null)
             } else {
                 console.error(error)
                 alert("Erro ao remover cesta.")
@@ -544,7 +547,7 @@ export function RacionalizacaoClient() {
                                     <h3 className="font-bold text-lg leading-none">{selectedBasket.name}</h3>
                                 </div>
                                 <div className="flex items-center gap-1">
-                                    <Button variant="ghost" size="icon" onClick={handleDeleteBasket} disabled={saving} className="h-8 w-8 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10" title="Apagar Cesta">
+                                    <Button variant="ghost" size="icon" onClick={() => setBasketToDelete(selectedBasket)} disabled={saving} className="h-8 w-8 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10" title="Apagar Cesta">
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
                                     <Button variant="ghost" size="icon" onClick={() => setSelectedBasket(null)} className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground">
@@ -806,6 +809,25 @@ export function RacionalizacaoClient() {
                         <Button onClick={handleSaveBasketModal} disabled={saving || !basketForm.name.trim()}>
                             {saving ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                             Salvar Cesta
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Modal Confirmação Excluir */}
+            <Dialog open={!!basketToDelete} onOpenChange={(open) => !open && setBasketToDelete(null)}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="text-destructive">Excluir Cesta Base</DialogTitle>
+                        <DialogDescription>
+                            Você está prestes a excluir a cesta <strong>{basketToDelete?.name}</strong>. Todas as correlações dependentes também serão desfeitas. Esta ação não poderá ser desfeita.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="mt-4 gap-2 sm:gap-0">
+                        <Button variant="outline" onClick={() => setBasketToDelete(null)}>Cancelar</Button>
+                        <Button variant="destructive" onClick={handleDeleteBasket} disabled={saving}>
+                            {saving ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                            Sim, Excluir
                         </Button>
                     </DialogFooter>
                 </DialogContent>
