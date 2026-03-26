@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     const { name, pracas, periods } = body as {
       name: string
       pracas: string[]
-      periods: { period_id: string; percent: number }[]
+      periods: { period_id: string; percent: number; expected_nights?: number | null }[]
     }
 
     if (!name) {
@@ -65,6 +65,7 @@ export async function POST(request: Request) {
           seasonality_id: seasonality.id,
           period_id: p.period_id,
           percent: p.percent,
+          expected_nights: p.expected_nights ?? null,
         })))
 
       if (ppError) throw ppError
@@ -92,7 +93,7 @@ export async function PUT(request: Request) {
       id: string
       name?: string
       pracas?: string[]
-      periods?: { period_id: string; percent: number }[]
+      periods?: { period_id: string; percent: number; expected_nights?: number | null }[]
     }
 
     if (!id) {
@@ -147,6 +148,7 @@ export async function PUT(request: Request) {
             seasonality_id: id,
             period_id: p.period_id,
             percent: p.percent,
+            expected_nights: p.expected_nights ?? null,
           })))
 
         if (ppError) throw ppError

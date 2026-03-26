@@ -36,7 +36,7 @@ interface Seasonality {
   id: string
   name: string
   pracas: string[]
-  periods: { periodId: string; percent: number }[]
+  periods: { periodId: string; percent: number; expectedNights?: number | null }[]
 }
 
 interface UnitPeriodPricing {
@@ -180,6 +180,7 @@ export default function PricingPage() {
           periods: (s.seasonality_periods || []).map((sp: any) => ({
             periodId: sp.period_id,
             percent: Number(sp.percent),
+            expectedNights: sp.expected_nights != null ? Number(sp.expected_nights) : null,
           })),
         })))
       }
@@ -354,11 +355,17 @@ export default function PricingPage() {
         // Meta weighted by period's share of the month (seasonality %)
         const prices = seasonalityFilteredData.map(item => {
           const praca = item.propriedade.praca || "Outros"
+          const savedSeas = pracaSeasonalityMap.get(praca)
           const monthlyMeta = item.metas.find(m => m.mes === periodMonth)
           const fullMonthMeta = monthlyMeta?.meta || 0
           const sharePercent = getMonthSharePercent(praca, period)
           const periodGoal = fullMonthMeta * (sharePercent / 100)
-          return expectedNights > 0 ? periodGoal / expectedNights : 0
+          
+          // Use per-seasonality expected nights if available, fallback to period default
+          const seasPeriod = savedSeas?.periods.find(p => p.periodId === period.id)
+          const nights = seasPeriod?.expectedNights ?? period.expectedNights ?? 20
+          
+          return nights > 0 ? periodGoal / nights : 0
         })
 
         const avgPrice = prices.length > 0
@@ -396,7 +403,9 @@ export default function PricingPage() {
       const sharePercent = getMonthSharePercent(praca, selectedPeriod)
       const periodGoal = fullMonthMeta * (sharePercent / 100)
 
-      const expectedNights = selectedPeriod.expectedNights || 20
+      // Use per-seasonality expected nights if available, fallback to period default
+      const seasPeriod = savedSeas?.periods.find(p => p.periodId === selectedPeriod.id)
+      const expectedNights = seasPeriod?.expectedNights ?? selectedPeriod.expectedNights ?? 20
 
       const optimalPrice = expectedNights > 0 ? periodGoal / expectedNights : 0
       const periodStart = selectedPeriod.startDate
@@ -696,7 +705,12 @@ export default function PricingPage() {
     const sharePercent = getMonthSharePercent(praca, period)
     const periodGoal = fullMonthMeta * (sharePercent / 100)
 
-    const optimalPrice = simExpectedNights > 0 ? periodGoal / simExpectedNights : 0
+    // Use per-seasonality expected nights if available, fallback to period default/sim value
+    const savedSeas = pracaSeasonalityMap.get(praca)
+    const seasPeriod = savedSeas?.periods.find(p => p.periodId === period.id)
+    const nights = simExpectedNights || seasPeriod?.expectedNights || period.expectedNights || 20
+
+    const optimalPrice = nights > 0 ? periodGoal / nights : 0
     const currentAvg = unit.metricas?.precoMedioNoite || 0
 
     // Calculate seasonPercent for display (optional, can be removed if not used)
@@ -848,7 +862,7 @@ export default function PricingPage() {
           id: seasonality.id,
           name: seasonality.name,
           pracas: seasonality.pracas,
-          periods: seasonality.periods.map(p => ({ period_id: p.periodId, percent: p.percent })),
+          periods: seasonality.periods.map(p => ({ period_id: p.periodId, percent: p.percent, expected_nights: p.expectedNights ?? null })),
         }),
       })
       const result = await res.json()
@@ -1201,6 +1215,12 @@ export default function PricingPage() {
                       <Label className="text-[10px] text-muted-foreground">Noites</Label>
                       <Input type="number" className="h-8 text-sm font-mono" value={editingPeriod.expectedNights || 1} min={1} max={31} onChange={e => setEditingPeriod(p => ({ ...p, expectedNights: Number(e.target.value) || 1 }))} />
                     </div>
+                  </div>
+                  <div className="pt-2 border-t border-blue-200 mt-2 flex items-center gap-1.5 opacity-80">
+                    <TrendingUp className="h-3 w-3 text-blue-600" />
+                    <p className="text-[10px] text-blue-900 italic">
+                      Dica: Para Janeiro, a Praia pode ter 25 noites e a Serra 12. Ajuste isso na aba <strong>Sazonalidades</strong>.
+                    </p>
                   </div>
                 </div>
               )}
@@ -2055,6 +2075,17 @@ function SeasonalityEditor({
     setDirty(true)
   }
 
+  function setPeriodNights(periodId: string, expectedNights: number | null) {
+    setLocal(prev => {
+      const existing = prev.periods.find(p => p.periodId === periodId)
+      const newPeriods = existing
+        ? prev.periods.map(p => p.periodId === periodId ? { ...p, expectedNights } : p)
+        : [...prev.periods, { periodId, percent: 0, expectedNights }] // Default to 0% if new
+      return { ...prev, periods: newPeriods }
+    })
+    setDirty(true)
+  }
+
   function toggleEvent(eventId: string) {
     setLocal(prev => {
       const existing = prev.periods.find(p => p.periodId === eventId)
@@ -2137,7 +2168,9 @@ function SeasonalityEditor({
               <p className="text-[11px] text-blue-900 leading-relaxed">
                 <strong>Como funciona:</strong> Distribua 100% do ano entre os meses. Depois, distribua os 100% de cada mês entre o período normal e eventos.
                 <br />
-                <strong>Ex:</strong> Janeiro = 10% do ano. Réveillon (evento) = 30% daqueles 10% = <strong>3% do ano</strong>. Janeiro resto = 70% × 10% = <strong>7% do ano</strong>.
+                <strong>Ex:</strong> Janeiro = 10% do ano. Réveillon (evento) = 30% daqueles 10% = <strong>3% do ano</strong>.
+                <br />
+                <strong>Dica:</strong> Use o campo **nts** para ajustar as noites esperadas desta sazonalidade (ex: noites em Janeiro na Praia vs Serra).
               </p>
             </div>
             <div className="flex items-center justify-between mb-2">
@@ -2209,25 +2242,44 @@ function SeasonalityEditor({
                             {monthPercent.toFixed(1)}% do ano
                           </Badge>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Slider
-                            value={[monthPercent]}
-                            min={0}
-                            max={100}
-                            step={0.5}
-                            className="flex-1"
-                            onValueChange={([v]) => setPeriodPercent(month.id, v)}
-                          />
-                          <Input
-                            type="number"
-                            className="h-7 w-20 text-right font-mono text-xs"
-                            value={monthPercent.toFixed(1)}
-                            min={0}
-                            max={100}
-                            step={0.5}
-                            onChange={e => setPeriodPercent(month.id, Number(e.target.value) || 0)}
-                          />
-                          <span className="text-[10px] text-muted-foreground w-4">%</span>
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1">
+                            <Slider
+                              value={[monthPercent]}
+                              min={0}
+                              max={100}
+                              step={0.5}
+                              className="flex-1"
+                              onValueChange={([v]) => setPeriodPercent(month.id, v)}
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="relative">
+                              <Input
+                                type="number"
+                                className="h-7 w-20 text-right font-mono text-xs pr-4"
+                                value={monthPercent.toFixed(1)}
+                                min={0}
+                                max={100}
+                                step={0.5}
+                                onChange={e => setPeriodPercent(month.id, Number(e.target.value) || 0)}
+                              />
+                              <span className="absolute right-1.5 top-1.5 text-[9px] text-muted-foreground">%</span>
+                            </div>
+                            
+                            <div className="relative">
+                              <Input
+                                type="number"
+                                className="h-7 w-16 text-right font-mono text-xs pl-6"
+                                value={local.periods.find(p => p.periodId === month.id)?.expectedNights ?? ""}
+                                placeholder={String(month.expectedNights)}
+                                min={1}
+                                max={31}
+                                onChange={e => setPeriodNights(month.id, e.target.value ? Number(e.target.value) : null)}
+                              />
+                              <span className="absolute left-1.5 top-1.5 text-[9px] text-muted-foreground">nts</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -2265,19 +2317,36 @@ function SeasonalityEditor({
                                       min={0}
                                       max={100}
                                       step={0.5}
-                                      className="flex-1 min-w-[80px] max-w-[150px]"
+                                      className="flex-1 min-w-[60px] max-w-[120px]"
                                       onValueChange={([v]) => setPeriodPercent(event.id, v)}
                                     />
-                                    <Input
-                                      type="number"
-                                      className="h-6 w-16 text-right font-mono text-[11px] bg-white border-blue-300"
-                                      value={eventPercent.toFixed(1)}
-                                      min={0}
-                                      max={100}
-                                      step={0.5}
-                                      onChange={e => setPeriodPercent(event.id, Number(e.target.value) || 0)}
-                                    />
-                                    <span className="text-[10px] text-muted-foreground shrink-0">% do mês</span>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <div className="relative">
+                                        <Input
+                                          type="number"
+                                          className="h-6 w-16 text-right font-mono text-[11px] bg-white border-blue-300 pr-4"
+                                          value={eventPercent.toFixed(1)}
+                                          min={0}
+                                          max={100}
+                                          step={0.5}
+                                          onChange={e => setPeriodPercent(event.id, Number(e.target.value) || 0)}
+                                        />
+                                        <span className="absolute right-1 top-1 text-[8px] text-muted-foreground">%</span>
+                                      </div>
+                                      
+                                      <div className="relative">
+                                        <Input
+                                          type="number"
+                                          className="h-6 w-14 text-right font-mono text-[11px] bg-white border-blue-300 pl-5"
+                                          value={eventEntry?.expectedNights ?? ""}
+                                          placeholder={String(event.expectedNights)}
+                                          min={1}
+                                          max={31}
+                                          onChange={e => setPeriodNights(event.id, e.target.value ? Number(e.target.value) : null)}
+                                        />
+                                        <span className="absolute left-1 top-1 text-[8px] text-muted-foreground font-medium">nts</span>
+                                      </div>
+                                    </div>
                                   </>
                                 ) : (
                                   <span className="text-[10px] text-gray-400 italic">Evento não relevante</span>
