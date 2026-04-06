@@ -313,15 +313,16 @@ export function AnalyticsCharts({ data, globalFilters }: AnalyticsChartsProps) {
         .reduce((sum: number, r: any) => sum + r.reservetotal, 0)
 
       let status = "E"
-      if (receitaMes >= 0.1) {
-        if (metaDoMes > 0 && receitaMes / metaDoMes >= 1.0) {
-          status = "A"
-        } else if (metaMovel > 0) {
-          const percentualMovel = receitaMes / metaMovel
-          if (percentualMovel >= 0.9) status = "B"
-          else if (percentualMovel >= 0.5) status = "C"
-          else status = "D"
-        }
+      if (metaDoMes > 0 && receitaMes / metaDoMes >= 1.0) {
+        status = "A"
+      } else if (metaMovel > 0) {
+        const percentualMovel = receitaMes / metaMovel
+        if (percentualMovel >= 0.8) status = "B"
+        else if (percentualMovel >= 0.5) status = "C"
+        else if (percentualMovel >= 0.001) status = "D"
+        else status = "E"
+      } else {
+        if (receitaMes >= 0.1) status = "D"
       }
 
       statusCount[status as keyof typeof statusCount]++
@@ -336,11 +337,11 @@ export function AnalyticsCharts({ data, globalFilters }: AnalyticsChartsProps) {
     }
 
     const statusLabels = {
-      A: "Status A (≥100% Meta)",
-      B: "Status B (≥90% Meta Móvel)",
+      A: "Status A (≥100% Meta Mensal)",
+      B: "Status B (≥80% Meta Móvel)",
       C: "Status C (≥50% Meta Móvel)",
       D: "Status D (<50% Meta Móvel)",
-      E: "Status E (Zerada)",
+      E: "Status E (<0,1%)",
     }
 
     const totalUnidades = Object.values(statusCount).reduce((sum, count) => sum + count, 0)

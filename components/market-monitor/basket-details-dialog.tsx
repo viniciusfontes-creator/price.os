@@ -240,7 +240,9 @@ export function BasketDetailsDialog({ basketName, basketId, items, trigger, onDe
 
                                             <div className="flex items-center justify-between md:justify-end gap-4 w-full md:w-auto">
                                                 <div className="text-right shrink-0">
-                                                    {item.airbnb_data?.preco_por_noite ? (
+                                                    {!item.airbnb_data ? (
+                                                        <div className="text-xs text-amber-500 italic">Dados pendentes</div>
+                                                    ) : item.airbnb_data?.preco_por_noite ? (
                                                         <>
                                                             <div className="text-sm font-bold">R$ {item.airbnb_data?.preco_por_noite?.toLocaleString('pt-BR')}</div>
                                                             <div className="text-[10px] text-muted-foreground">Preço base</div>
@@ -248,7 +250,7 @@ export function BasketDetailsDialog({ basketName, basketId, items, trigger, onDe
                                                     ) : (
                                                         <div className="text-xs text-muted-foreground italic">Sem preço</div>
                                                     )}
-                                                    {(!item.history || item.history.length === 0) && (
+                                                    {(!item.history || item.history.length === 0) && item.airbnb_data && (
                                                         <div className="text-[10px] text-red-500 font-medium whitespace-nowrap">Sem histórico (2025/26)</div>
                                                     )}
                                                 </div>

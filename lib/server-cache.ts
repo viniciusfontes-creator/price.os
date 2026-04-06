@@ -105,4 +105,6 @@ export const CACHE_KEYS = {
     DASHBOARD_DATA: 'dashboard-data',
     PRICING_INTELLIGENCE: 'pricing-intelligence',
     COTACOES: 'cotacoes-data',
+    BASKETS_PROPERTIES: 'baskets-properties',
+    BASKETS_TARIFARIO: 'baskets-tarifario',
 } as const

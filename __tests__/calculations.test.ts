@@ -108,7 +108,8 @@ describe('calculations.ts', () => {
             expect(calculatePropertyStatus(6000, 5000, 4500)).toBe('A')
         })
 
-        it('should return B when moving goal >=90%', () => {
+        it('should return B when moving goal >=80%', () => {
+            expect(calculatePropertyStatus(3600, 5000, 4500)).toBe('B')
             expect(calculatePropertyStatus(4100, 5000, 4500)).toBe('B')
         })
 

@@ -63,7 +63,7 @@ export function BasketManagementView({ properties, onSelectProperty, onReload }:
             if (res.ok) {
                 toast({ title: 'Cesta excluída com sucesso' });
                 // Reload baskets
-                const reloadRes = await fetch('/api/baskets');
+                const reloadRes = await fetch('/api/baskets?mode=snapshot');
                 const result = await reloadRes.json();
                 if (result.success) setBaskets(result.data);
                 onReload();
@@ -80,8 +80,8 @@ export function BasketManagementView({ properties, onSelectProperty, onReload }:
         async function loadAllBaskets() {
             setLoading(true);
             try {
-                // Fetch ALL baskets (no propertyId filter)
-                const res = await fetch('/api/baskets');
+                // Fetch ALL baskets with snapshot data (names, prices, ratings)
+                const res = await fetch('/api/baskets?mode=snapshot');
                 const result = await res.json();
                 if (result.success) {
                     setBaskets(result.data);
@@ -96,17 +96,34 @@ export function BasketManagementView({ properties, onSelectProperty, onReload }:
         loadAllBaskets();
     }, []);
 
-    // Group baskets by property
+    // Group baskets by property (derive from basket_items, fallback to legacy field)
     const basketsByProperty = baskets.reduce((acc, basket) => {
-        const propId = basket.internal_property_id;
-        if (!acc[propId]) acc[propId] = [];
-        acc[propId].push(basket);
+        const internalItems = basket.basket_items?.filter(i => i.item_type === 'internal') || [];
+
+        if (internalItems.length > 0) {
+            internalItems.forEach(item => {
+                const propId = item.internal_property_id;
+                if (propId) {
+                    if (!acc[propId]) acc[propId] = [];
+                    if (!acc[propId].find(b => b.id === basket.id)) {
+                        acc[propId].push(basket);
+                    }
+                }
+            });
+        } else if (basket.internal_property_id) {
+            // Legacy baskets with property on basket level
+            if (!acc[basket.internal_property_id]) acc[basket.internal_property_id] = [];
+            acc[basket.internal_property_id].push(basket);
+        } else {
+            if (!acc['_unassigned']) acc['_unassigned'] = [];
+            acc['_unassigned'].push(basket);
+        }
         return acc;
     }, {} as Record<string, Basket[]>);
 
     // Calculate quick stats
     const totalBaskets = baskets.length;
-    const totalCompetitors = baskets.reduce((sum, b) => sum + (b.basket_items?.length || 0), 0);
+    const totalCompetitors = baskets.reduce((sum, b) => sum + (b.basket_items?.filter(i => i.item_type === 'external').length || 0), 0);
     const allPrices = baskets.flatMap(b =>
         (b.basket_items || [])
             .map(i => i.airbnb_data?.preco_por_noite)
@@ -144,7 +161,7 @@ export function BasketManagementView({ properties, onSelectProperty, onReload }:
                     onSuccess={() => {
                         onReload();
                         // Reload local state
-                        fetch('/api/baskets')
+                        fetch('/api/baskets?mode=snapshot')
                             .then(r => r.json())
                             .then(d => d.success && setBaskets(d.data));
                     }}
@@ -225,14 +242,15 @@ export function BasketManagementView({ properties, onSelectProperty, onReload }:
             ) : (
                 <div className="space-y-6">
                     {Object.entries(basketsByProperty).map(([propId, propBaskets]) => {
-                        const property = properties.find(p => p.idpropriedade === propId);
-                        if (!property) return null;
+                        const isUnassigned = propId === '_unassigned';
+                        const property = isUnassigned ? null : properties.find(p => p.idpropriedade === propId);
+                        if (!isUnassigned && !property) return null;
 
                         return (
                             <div key={propId} className="space-y-3">
                                 <div className="flex items-center gap-2">
                                     <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                                        {property.nome}
+                                        {isUnassigned ? 'Sem propriedade associada' : property!.nome}
                                     </h3>
                                     <Badge variant="outline" className="text-xs">
                                         {propBaskets.length} cesta{propBaskets.length > 1 ? 's' : ''}
@@ -253,7 +271,7 @@ export function BasketManagementView({ properties, onSelectProperty, onReload }:
                                             <Card
                                                 key={basket.id}
                                                 className="relative hover:shadow-lg transition-shadow cursor-pointer group"
-                                                onClick={() => onSelectProperty(property)}
+                                                onClick={() => property && onSelectProperty(property)}
                                             >
                                                 {/* Delete Button (appears on hover) */}
                                                 <button
@@ -328,7 +346,7 @@ export function BasketManagementView({ properties, onSelectProperty, onReload }:
                                                         className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            onSelectProperty(property);
+                                                            if (property) onSelectProperty(property);
                                                         }}
                                                     >
                                                         Ver Detalhes

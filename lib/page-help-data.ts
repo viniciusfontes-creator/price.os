@@ -22,17 +22,17 @@ export const pageHelpData: Record<string, PageHelpContent> = {
         description: "Acompanhe de perto as metas de vendas da equipe através de 4 indicadores: Meta do Mês (Data de Criação), Meta da Semana (Data de Criação), Meta do Mês (Data de Checkout) e Meta da Semana (Data de Checkout). Clique no botão '+' em cada cartão para ver o detalhamento por unidade.",
         useCases: [
           "Identificar se a equipe bateu a meta semanal de faturamento baseado na criação da reserva.",
-          "Verificar quais unidades estão abaixo de 40% da meta.",
-          "Motivar a equipe celebrando os meses onde o tickect médio excedeu a previsão."
+          "Verificar quais unidades não tem nenhuma saída para essa semana.",
+          "Motivar a equipe a atingir metas de venda e de check-out."
         ]
       },
       {
         id: "ranking-vendas",
         title: "Ranking de Vendas Diárias",
-        description: "Acompanhe dia a dia o ritmo e o valor financeiro das locações. Ideal para entender dias atípicos com pico de reservas, ou períodos fracos que possam exigir ajustes na precificação.",
+        description: "Acompanhe dia a dia o ritmo e o valor financeiro das locações. Ideal para estimular a competividade interna pelo topo da liderança de agentes que mais vendem.",
         useCases: [
-          "Encontrar um dia da semana que sistematicamente não tem vendas, para criar promoções relâmpago.",
-          "Identificar o pico de reservas do mês para entender padrão de pesquisa do usuário."
+          "Reconhecer membros da nossa equipe desde o primeiro dia do mês.",
+          "Identificar outliers da nossa equipe, qual atendente está tendo a melhor performance"
         ]
       },
       {
@@ -41,7 +41,7 @@ export const pageHelpData: Record<string, PageHelpContent> = {
         description: "Uma visão prática mostrando quais plataformas (Airbnb, Booking.com, site direto, etc) ou canais estão originando o maior volume de receita para as propriedades. Facilita o mapeamento da distribuição de vendas.",
         useCases: [
           "Constatar dependência alta do Booking.com e traçar metas focar vendas diretas.",
-          "Reconhecer que o canal de 'Atendimento' trouxe vendas mais valiosas no último feriado.",
+          "Reconhecer que o canal de 'Atendimento' trouxe está com uma performance melhor que a CurtaBora.",
           "Revisar comissões baseadas em qual OTA gera mais tráfego."
         ]
       },
@@ -52,7 +52,7 @@ export const pageHelpData: Record<string, PageHelpContent> = {
         useCases: [
           "Visualizar de forma clara a ocorrência de 'janelas mortas' de 1-2 dias entre reservas longas e forçar baixar preço naqueles dias.",
           "Ver se feriados estão plenamente reservados.",
-          "Gerenciar bloqueios de manutenção em períodos estagnados."
+          "Gerenciar finais de semana sem reservas."
         ]
       }
     ]
@@ -60,15 +60,15 @@ export const pageHelpData: Record<string, PageHelpContent> = {
   "/propriedades/pricing": {
     id: "pricing",
     title: "Pricing Intelligence",
-    description: "Use inteligência de dados para precificar melhor e maximizar o RevPAR das suas propriedades.",
+    description: "Use inteligência de dados para precificar melhor e maximizar a rentabilidade das propriedades.",
     features: [
       {
         id: "pricing-visao-geral",
         title: "Estratégia de Precificação Base",
         description: "Define e gerencia padrões diários para altas e baixas temporadas usando algoritmos para equilibrar Ocupação e Receita.",
         useCases: [
-          "Configurar preços mínimos agressivos para baixas temporadas baseando-se no histórico de baixa procura.",
-          "Garantir preços inflacionados no réveillon automaticamente assim que os quartos são disponibilizados no ano anterior."
+          "Configurar períodos de sazonalidade e como se comporta a oscilação de valores e ocupação por região.",
+          "Garantir preços racionalizados com base em dados históricos e ampla visão externa."
         ]
       }
     ]
@@ -83,7 +83,7 @@ export const pageHelpData: Record<string, PageHelpContent> = {
         title: "Rastreador Airbnb",
         description: "Monitora os links dos concorrentes que você informou, trazendo preços deles na mesma visualização das suas unidades.",
         useCases: [
-          "Ativar alertas se sua unidade estiver 20% mais cara que a média sem justificativa adicional.",
+          "Identificar se sua unidade estiver 20% mais cara que a média sem justificativa adicional.",
           "Analisar se a região toda abaixou preços no final de novembro."
         ]
       }

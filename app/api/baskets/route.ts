@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-client'
 import { getTarifario, getPropriedades } from '@/lib/bigquery-service'
+import { serverCache, CACHE_KEYS } from '@/lib/server-cache'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -11,6 +12,8 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const withHistory = searchParams.get('withHistory') === 'true'
+    // mode: 'snapshot' = latest data per competitor (fast), 'full' = complete history
+    const mode = withHistory ? 'full' : (searchParams.get('mode') || 'full')
 
     try {
         // 1. Fetch Baskets and their items
@@ -85,49 +88,203 @@ export async function GET(request: Request) {
         };
 
         // 3. Fetch external competitor data (Airbnb listings)
-        if (allExternalIds.length > 0 && withHistory) {
-            // NEW BATCHED QUERY: Fetch all history in one go using the indexed id_numerica column
-            // This prevents timeouts and is much more efficient than N parallel queries
+        if (allExternalIds.length > 0 && (mode === 'full' || mode === 'snapshot')) {
+            // Step A: Try exact match on id_numerica (fast, uses index)
             const { data: allHistoryData, error: historyError } = await supabase
                 .from('airbnb_extrações')
                 .select('*')
                 .in('id_numerica', allExternalIds)
+                .gt('preco_total', 0)
                 .order('data_extracao', { ascending: false });
 
             if (historyError) {
                 console.error('[API] Error fetching history:', historyError);
             }
 
-            const allHistory = allHistoryData || [];
+            let allHistory = allHistoryData || [];
 
-            // FALLBACK: If some IDs were not found by numeric ID (e.g. legacy data with precision issues),
-            // we could perform a URL search, but with 433k rows, it's safer to rely on the index.
-            // For now, the 'id_numerica' index will handle the vast majority of cases instantly.
+            // Step B: Find which IDs were NOT matched
+            // Using exact matching instead of substring prefixes to avoid collisions
+            // If an ID is matched but it's lossy, it will trigger Step C fallback for accuracy.
+            const matchedIds = new Set(
+                allHistory.map(h => extractAirbnbId(h))
+            );
+            const unmatchedIds = allExternalIds.filter(
+                id => !matchedIds.has(id)
+            );
+
+            // Step C: For unmatched IDs, query normalized tables (airbnb_propriedades + airbnb_precos)
+            // The RPC buscar_concorrentes_v3 reads from these tables, but baskets only queried airbnb_extrações.
+            // IMPORTANT: id_numerica is NUMERIC in PostgreSQL. The IDs from basket_items (extracted from URLs)
+            // are precise, but the NUMERIC column has precision loss. We must search by URL, not by id_numerica.
+            if (unmatchedIds.length > 0) {
+                console.log(`[API] ${unmatchedIds.length} IDs not found in airbnb_extrações, querying normalized tables by URL...`);
+
+                // Search airbnb_propriedades by URL (url_anuncio has correct full IDs)
+                const urlOrConditions = unmatchedIds
+                    .map(id => `url_anuncio.like.%rooms/${id}%`)
+                    .join(',');
+
+                const { data: propData, error: propError } = await supabase
+                    .from('airbnb_propriedades')
+                    .select('id_numerica, nome_anuncio, tipo_propriedade, url_anuncio, hospedes_adultos, media_avaliacao, latitude, longitude')
+                    .or(urlOrConditions);
+
+                if (propError) {
+                    console.error('[API] airbnb_propriedades URL search error:', propError);
+                }
+
+                const foundProps = propData || [];
+
+                if (foundProps.length > 0) {
+                    console.log(`[API] Found ${foundProps.length} properties in airbnb_propriedades by URL`);
+
+                    // Build a map: URL-extracted ID -> property data
+                    // CRITICAL: id_numerica is NUMERIC in PostgreSQL but JavaScript loses precision
+                    // for 19-digit numbers. We must use the URL-extracted string IDs for ALL queries.
+                    const propMap = new Map<string, any>(); // urlId -> prop
+                    const correctStringIds: string[] = []; // URL-extracted IDs (full precision)
+
+                    foundProps.forEach((p: any) => {
+                        const urlId = extractAirbnbId(p); // extract correct ID from url_anuncio
+                        propMap.set(urlId, p);
+                        correctStringIds.push(urlId); // PostgREST parses strings to exact NUMERIC
+                    });
+
+                    // Fetch price history using STRING IDs and date filters
+                    // IMPORTANT: We filter by checkin date range to ensure we find old records
+                    // for these specific IDs even if other properties have newer extractions.
+                    let priceQuery = supabase
+                        .from('airbnb_precos')
+                        .select('id, id_numerica, data_extracao, checkin_formatado, preco_total, quantidade_noites, preferido_hospedes')
+                        .in('id_numerica', correctStringIds)
+                        .gt('preco_total', 0);
+
+                    if (startDate) {
+                        priceQuery = priceQuery.gte('checkin_formatado', startDate);
+                    }
+                    if (endDate) {
+                        priceQuery = priceQuery.lte('checkin_formatado', endDate);
+                    }
+
+                    const { data: priceData, error: priceError } = await priceQuery
+                        .order('data_extracao', { ascending: false })
+                        .limit(5000); // Increased limit as we are filtering by IDs and Date
+
+                    if (priceError) {
+                        console.error('[API] airbnb_precos error:', priceError);
+                    }
+
+                    const prices = priceData || [];
+                    console.log(`[API] Found ${prices.length} price records in airbnb_precos for ${correctStringIds.length} properties`);
+
+                    // Build reverse map: JS-precision-loss id_numerica -> correct URL id
+                    // price.id_numerica comes back as JS number (precision lost), e.g. 1311831924635536100
+                    // We need to match it to the correct prop by comparing the lossy values
+                    const lossyToCorrectId = new Map<number, string>();
+                    const lossyToProp = new Map<number, any>();
+                    foundProps.forEach((p: any) => {
+                        const urlId = extractAirbnbId(p);
+                        lossyToCorrectId.set(p.id_numerica, urlId); // lossy number -> correct string
+                        lossyToProp.set(p.id_numerica, p);
+                    });
+
+                    const mergedRecords = prices.map((price: any) => {
+                        const prop = lossyToProp.get(price.id_numerica);
+                        const correctId = lossyToCorrectId.get(price.id_numerica) || String(price.id_numerica);
+                        return {
+                            id: price.id,
+                            id_numerica: correctId,
+                            data_extracao: price.data_extracao,
+                            checkin_formatado: price.checkin_formatado,
+                            preco_total: price.preco_total,
+                            quantidade_noites: price.quantidade_noites,
+                            preferido_hospedes: price.preferido_hospedes,
+                            nome_anuncio: prop?.nome_anuncio,
+                            tipo_propriedade: prop?.tipo_propriedade,
+                            url_anuncio: prop?.url_anuncio,
+                            hospedes_adultos: prop?.hospedes_adultos,
+                            media_avaliacao: prop?.media_avaliacao,
+                            latitude: prop?.latitude,
+                            longitude: prop?.longitude,
+                            preco_por_noite: price.preco_total && price.quantidade_noites
+                                ? Number(price.preco_total) / Number(price.quantidade_noites)
+                                : null,
+                            _source: 'normalized'
+                        };
+                    });
+
+                    if (mergedRecords.length > 0) {
+                        console.log(`[API] Merged ${mergedRecords.length} records from normalized tables`);
+                        allHistory = [...allHistory, ...mergedRecords];
+                    }
+
+                    // For properties found but with no prices, create minimal snapshot (at least show the name)
+                    const propsWithPrices = new Set(
+                        prices.map((pr: any) => lossyToCorrectId.get(pr.id_numerica) || String(pr.id_numerica))
+                    );
+                    const propsWithoutPrices = foundProps.filter((p: any) => !propsWithPrices.has(extractAirbnbId(p)));
+
+                    if (propsWithoutPrices.length > 0) {
+                        const minimalRecords = propsWithoutPrices.map((prop: any) => ({
+                            id: null,
+                            id_numerica: extractAirbnbId(prop),
+                            data_extracao: null,
+                            checkin_formatado: null,
+                            preco_total: null,
+                            quantidade_noites: null,
+                            nome_anuncio: prop.nome_anuncio,
+                            tipo_propriedade: prop.tipo_propriedade,
+                            url_anuncio: prop.url_anuncio,
+                            hospedes_adultos: prop.hospedes_adultos,
+                            media_avaliacao: prop.media_avaliacao,
+                            latitude: prop.latitude,
+                            longitude: prop.longitude,
+                            preco_por_noite: null,
+                            _source: 'normalized_no_prices'
+                        }));
+                        allHistory = [...allHistory, ...minimalRecords];
+                    }
+                } else {
+                    console.log(`[API] No properties found in normalized tables for IDs:`, unmatchedIds);
+                }
+            }
+
+            // For snapshot mode, keep only the latest entry per listing
+            if (mode === 'snapshot') {
+                const latestByListing = new Map<string, any>();
+                allHistory.forEach(h => {
+                    const hId = extractAirbnbId(h).substring(0, 15);
+                    if (!latestByListing.has(hId)) {
+                        latestByListing.set(hId, h);
+                    }
+                });
+                allHistory = Array.from(latestByListing.values());
+            }
 
             // Map data back to baskets
             baskets.forEach((basket: any) => {
                 basket.basket_items?.forEach((item: any) => {
                     if (item.item_type !== 'external') return
 
-                    // Use first 15 digits for safe matching (avoids precision loss issues)
-                    const itemPartialId = item.airbnb_listing_id?.toString().substring(0, 15);
-
-                    // Find all history for this item by matching first 15 digits of URL ID
                     const itemHistory = allHistory.filter(h => {
                         const historyId = extractAirbnbId(h);
-                        const historyPartialId = historyId.substring(0, 15);
-                        return historyPartialId === itemPartialId;
-                    }) || []
+                        return historyId === item.airbnb_listing_id;
+                    });
 
-                    item.history = itemHistory
+                    if (mode === 'full') {
+                        item.history = itemHistory;
+                    }
 
-                    // Set snapshot data (latest extraction found)
                     if (itemHistory.length > 0) {
-                        // Get the real ID from the URL for correct linking
+                        const latest = itemHistory[0];
                         item.airbnb_data = {
-                            ...itemHistory[0],
-                            // Override with extracted ID to ensure URL precision
-                            id_numerica: extractAirbnbId(itemHistory[0])
+                            ...latest,
+                            id_numerica: extractAirbnbId(latest),
+                            preco_por_noite: latest.preco_por_noite ||
+                                (latest.preco_total && latest.quantidade_noites
+                                    ? latest.preco_total / latest.quantidade_noites
+                                    : null)
                         };
                     }
                 })
@@ -136,15 +293,20 @@ export async function GET(request: Request) {
 
         // 4. Fetch internal property data
         if (allInternalIds.length > 0) {
-            const properties = await getPropriedades().catch(err => {
-                console.error('[API] Properties error:', err);
-                return [];
-            });
-
-            const allTarifario = withHistory ? await getTarifario().catch(err => {
-                console.error('[API] Error fetching tarifario', err);
-                return [];
-            }) : [];
+            const [properties, allTarifario] = await Promise.all([
+                serverCache.getOrFetch(
+                    CACHE_KEYS.BASKETS_PROPERTIES,
+                    () => getPropriedades(),
+                    300
+                ).catch(err => { console.error('[API] Properties error:', err); return []; }),
+                mode === 'full'
+                    ? serverCache.getOrFetch(
+                        CACHE_KEYS.BASKETS_TARIFARIO,
+                        () => getTarifario(),
+                        300
+                    ).catch(err => { console.error('[API] Error fetching tarifario', err); return []; })
+                    : Promise.resolve([])
+            ]);
 
             if (properties && properties.length > 0) {
                 baskets.forEach((basket: any) => {
@@ -158,7 +320,7 @@ export async function GET(request: Request) {
                             const propTarifario = allTarifario.filter(t => t.idpropriedade?.toString() === property.idpropriedade?.toString());
                             const customHistory: any[] = [];
 
-                            if (withHistory && propTarifario.length > 0) {
+                            if (mode === 'full' && propTarifario.length > 0) {
                                 // Calculate Holidays dynamically
                                 const calcEaster = (year: number) => {
                                     const a = year % 19, b = Math.floor(year / 100), c = year % 100;

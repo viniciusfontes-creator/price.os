@@ -270,10 +270,10 @@ Classificação de propriedades baseada em atingimento de metas:
 | Status | Critério | Significado | Ação Recomendada |
 |--------|----------|-------------|------------------|
 | **A** | ≥ 100% da meta mensal | Excelente performance | Manter estratégia, considerar aumento de preço |
-| **B** | ≥ 90% da meta móvel | Boa performance | Monitorar de perto, pode atingir meta |
+| **B** | ≥ 80% da meta móvel | Boa performance | Monitorar de perto, pode atingir meta |
 | **C** | ≥ 50% da meta móvel | Performance mediana | Ações de ajuste necessárias (preço ou promoção) |
-| **D** | < 50% da meta móvel | Performance ruim | Intervenção urgente (revisão de preço/fotos) |
-| **E** | Sem receita no mês | Sem vendas | Investigar bloqueios ou problemas técnicos |
+| **D** | < 50% da meta móvel e não zerada | Performance ruim | Intervenção urgente (revisão de preço/fotos) |
+| **E** | < 0,1% | Praticamente sem vendas | Investigar bloqueios ou problemas técnicos |
 
 **Implementação**: `lib/calculations.ts` → `calculatePropertyStatus()`
 

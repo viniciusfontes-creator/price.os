@@ -61,7 +61,7 @@ export interface BQMetaCheckout {
     idpropriedade: string // alias from query
     mes_ano: string // mm/yyyy format
     meta: number
-    Base_ou_Nova: string // "Base" or "Nova"
+    meta_movel: number
 }
 
 export interface BQTarifario {
@@ -214,9 +214,9 @@ SELECT
   IdPropriedade as idpropriedade,
   mes_ano,
   SAFE_CAST(meta AS NUMERIC) AS meta,
-  Base_ou_Nova
+  SAFE_CAST(meta_movel AS NUMERIC) AS meta_movel
 FROM
-  \`stage.metas_checkout_mensais_unidade\`
+  \`warehouse.meta_e_meta_movel_checkout\`
 WHERE
   EXTRACT(YEAR FROM PARSE_DATE('%m/%Y', mes_ano)) = EXTRACT(YEAR FROM CURRENT_DATE())
 ORDER BY
@@ -495,7 +495,7 @@ function transformBQMeta(bq: BQMetaCheckout): WebhookMeta {
         IdPropriedade: bq.idpropriedade,
         data_especifica: dataEspecifica,
         meta: convertToNumber(bq.meta),
-        meta_movel: 0,
+        meta_movel: convertToNumber(bq.meta_movel),
         mes: monthNumber,
     }
 }

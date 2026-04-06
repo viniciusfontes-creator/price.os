@@ -58,14 +58,14 @@ export const BIGQUERY_QUERIES = {
     ORDER BY creationdate DESC
   `,
 
-    // Goals by checkout - get all months from stage table
+    // Goals by checkout - get all months from warehouse table
     GOALS_CHECKOUT: `
     SELECT
       IdPropriedade as idpropriedade,
       mes_ano,
       SAFE_CAST(meta AS NUMERIC) AS meta,
-      Base_ou_Nova
-    FROM \`stage.metas_checkout_mensais_unidade\`
+      SAFE_CAST(meta_movel AS NUMERIC) AS meta_movel
+    FROM \`warehouse.meta_e_meta_movel_checkout\`
     WHERE EXTRACT(YEAR FROM PARSE_DATE('%m/%Y', mes_ano)) = EXTRACT(YEAR FROM CURRENT_DATE())
     ORDER BY IdPropriedade, mes_ano
   `,
@@ -189,10 +189,23 @@ export function transformReservation(bq: BQReservation): WebhookReserva {
 
 // Transform BigQuery goal to WebhookMeta
 export function transformGoal(bq: BQGoal): WebhookMeta {
+    const parts = (bq.mes_ano || '').split('/')
+    let month = '01', year = '2024'
+    let monthNumber = 1
+
+    if (parts.length === 2) {
+        month = parts[0]
+        year = parts[1]
+        monthNumber = parseInt(month, 10)
+    }
+    const dataEspecifica = `${year}-${month}-01`
+
     return {
-        idpropriedade: bq.idpropriedade,
-        mes: bq.mes_ano,
+        IdPropriedade: bq.idpropriedade,
+        data_especifica: dataEspecifica,
+        mes: monthNumber,
         meta: Number(bq.meta) || 0,
+        meta_movel: Number(bq.meta_movel) || 0,
     }
 }
 

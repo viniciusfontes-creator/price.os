@@ -302,8 +302,6 @@ export function calculatePropertyStatus(
   metaMensal: number,
   metaMovel: number
 ): "A" | "B" | "C" | "D" | "E" {
-  if (receitaCheckoutMes < 0.001) return "E"
-
   if (metaMensal > 0) {
     const percentualMetaMensal = (receitaCheckoutMes / metaMensal) * 100
     if (percentualMetaMensal >= 100) return "A"
@@ -311,12 +309,14 @@ export function calculatePropertyStatus(
 
   if (metaMovel > 0) {
     const percentualMetaMovel = (receitaCheckoutMes / metaMovel) * 100
-    if (percentualMetaMovel >= 90) return "B"
+    if (percentualMetaMovel >= 80) return "B"
     if (percentualMetaMovel >= 50) return "C"
-    return "D"
+    if (percentualMetaMovel >= 0.1) return "D"
+    return "E"
   }
 
-  return "D"
+  if (receitaCheckoutMes >= 0.1) return "D"
+  return "E"
 }
 
 // ============================================
