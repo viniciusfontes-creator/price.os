@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { TrendingUp, Target, DollarSign, Trophy, ExternalLink } from "lucide-react"
 import { SalesDetailModal } from "./sales-detail-modal"
+import { calculatePropertyStatus } from "@/lib/calculations"
 
 interface KeyMetrics {
   metaMesCreation: number
@@ -472,9 +473,10 @@ export function KeyMetricsPanel({ data }: KeyMetricsPanelProps) {
 
       const unidades = data
         .map(item => {
-          const meta = item.metas
-            ?.filter((m: any) => String(m.data_especifica || '').startsWith(anoMes))
-            .reduce((sum: number, m: any) => sum + (m.meta || 0), 0) || 0
+          const metasMes = item.metas
+            ?.filter((m: any) => String(m.data_especifica || '').startsWith(anoMes)) || []
+          const meta = metasMes.reduce((sum: number, m: any) => sum + (m.meta || 0), 0)
+          const metaMovel = metasMes.reduce((sum: number, m: any) => sum + (m.meta_movel || 0), 0)
 
           const realizado = item.reservas
             .filter((r: any) => r.checkoutdate >= inicioMesStr && r.checkoutdate <= fimMesStr)
@@ -482,15 +484,7 @@ export function KeyMetricsPanel({ data }: KeyMetricsPanelProps) {
 
           const percentual = meta > 0 ? (realizado / meta) * 100 : 0
 
-          // Calculate status based on percentual (matching calculateMetrics logic in service)
-          let status: "A" | "B" | "C" | "D" | "E" = "E"
-          if (realizado > 0) {
-            if (percentual >= 100) status = "A"
-            else if (percentual >= 80) status = "B"
-            else if (percentual >= 60) status = "C"
-            else if (percentual >= 40) status = "D"
-            else status = "E"
-          }
+          const status = calculatePropertyStatus(realizado, meta, metaMovel)
 
           statusCount[status]++
 
