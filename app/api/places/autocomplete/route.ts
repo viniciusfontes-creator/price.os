@@ -13,7 +13,7 @@ export async function GET(request: Request) {
         const response = await fetch(
             `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
                 input
-            )}&key=${apiKey}&language=pt-BR&types=geocode`
+            )}&key=${apiKey}&language=pt-BR`
         )
         const data = await response.json()
 

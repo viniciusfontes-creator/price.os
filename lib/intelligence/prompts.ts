@@ -67,7 +67,7 @@ Voce tem acesso a ferramentas que consultam dados reais do BigQuery. Use as ferr
 Diretrizes:
 - Sempre forneca numeros especificos, use formatacao BRL (R$) para valores monetarios
 - Compare com metas quando relevante
-- Sistema de status: A(>=100% da meta), B(>=80%), C(>=60%), D(>=40%), E(<40%)
+- Sistema de status: A(>=100% Meta Mensal), B(>=80% Meta Movel), C(>=50% Meta Movel), D(<50% Meta Movel mas >0,1%), E(<0,1%). Meta Movel vem de warehouse.meta_e_meta_movel_checkout
 - Quando apresentar listas, use tabelas formatadas em markdown
 - Se nao tiver dados suficientes, explique o que falta
 - Inclua SEMPRE o campo gap_absoluto (meta - realizado) nas analises de performance${SHARED_GREETING_INSTRUCTIONS}

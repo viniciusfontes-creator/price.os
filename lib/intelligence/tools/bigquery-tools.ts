@@ -284,9 +284,13 @@ WITH receita AS (
   GROUP BY 1
 ),
 metas AS (
-  SELECT IdPropriedade AS idpropriedade, SAFE_CAST(meta AS NUMERIC) AS meta
-  FROM \`stage.metas_checkout_mensais_unidade\`
-  WHERE mes_ano = '${mesAno}'
+  SELECT
+    idpropriedade,
+    SUM(SAFE_CAST(meta AS NUMERIC)) AS meta,
+    SUM(SAFE_CAST(meta_movel AS NUMERIC)) AS meta_movel
+  FROM \`warehouse.meta_e_meta_movel_checkout\`
+  WHERE FORMAT_DATE('%m/%Y', SAFE.PARSE_DATE('%Y-%m-%d', data_especifica)) = '${mesAno}'
+  GROUP BY 1
 ),
 performance AS (
   SELECT
@@ -297,13 +301,14 @@ performance AS (
     p.empreendimento_pousada,
     COALESCE(r.realizado, 0) AS realizado,
     COALESCE(m.meta, 0) AS meta,
+    COALESCE(m.meta_movel, 0) AS meta_movel,
     CASE WHEN m.meta > 0 THEN ROUND(COALESCE(r.realizado, 0) / m.meta * 100, 1) ELSE 0 END AS percentual_atingido,
     CASE
-      WHEN COALESCE(m.meta, 0) = 0 THEN 'E'
-      WHEN COALESCE(r.realizado, 0) / m.meta >= 1.0 THEN 'A'
-      WHEN COALESCE(r.realizado, 0) / m.meta >= 0.8 THEN 'B'
-      WHEN COALESCE(r.realizado, 0) / m.meta >= 0.6 THEN 'C'
-      WHEN COALESCE(r.realizado, 0) / m.meta >= 0.4 THEN 'D'
+      WHEN m.meta > 0 AND COALESCE(r.realizado, 0) / m.meta >= 1.0 THEN 'A'
+      WHEN m.meta_movel > 0 AND COALESCE(r.realizado, 0) / m.meta_movel >= 0.8 THEN 'B'
+      WHEN m.meta_movel > 0 AND COALESCE(r.realizado, 0) / m.meta_movel >= 0.5 THEN 'C'
+      WHEN m.meta_movel > 0 AND COALESCE(r.realizado, 0) / m.meta_movel >= 0.001 THEN 'D'
+      WHEN m.meta_movel IS NULL AND COALESCE(r.realizado, 0) >= 0.1 THEN 'D'
       ELSE 'E'
     END AS status,
     ROUND(COALESCE(m.meta, 0) - COALESCE(r.realizado, 0), 2) AS gap_absoluto

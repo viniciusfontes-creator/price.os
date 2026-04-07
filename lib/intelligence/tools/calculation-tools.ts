@@ -10,7 +10,7 @@ export const calculationTools: ToolDefinition[] = [
   {
     name: 'calculate_property_status',
     description:
-      'Calcula o status (A/B/C/D/E) de uma propriedade com base na receita do mes vs meta. A(>=100%), B(>=80%), C(>=60%), D(>=40%), E(<40%).',
+      'Calcula o status (A/B/C/D/E) de uma propriedade. A(>=100% Meta Mensal), B(>=80% Meta Movel), C(>=50% Meta Movel), D(<50% Meta Movel mas >0,1%), E(<0,1%).',
     parameters: {
       property_id: {
         type: 'string',
@@ -35,27 +35,39 @@ WITH receita AS (
     AND FORMAT_DATE('%m/%Y', SAFE.PARSE_DATE('%d-%m-%Y', checkoutdate)) = '${mesAno}'
 ),
 meta AS (
-  SELECT SAFE_CAST(meta AS NUMERIC) AS meta
-  FROM \`stage.metas_checkout_mensais_unidade\`
-  WHERE IdPropriedade = '${String(params.property_id).replace(/'/g, "''")}'
-    AND mes_ano = '${mesAno}'
-  LIMIT 1
+  SELECT
+    SUM(SAFE_CAST(meta AS NUMERIC)) AS meta,
+    SUM(SAFE_CAST(meta_movel AS NUMERIC)) AS meta_movel
+  FROM \`warehouse.meta_e_meta_movel_checkout\`
+  WHERE idpropriedade = '${String(params.property_id).replace(/'/g, "''")}'
+    AND FORMAT_DATE('%m/%Y', SAFE.PARSE_DATE('%Y-%m-%d', data_especifica)) = '${mesAno}'
 )
 SELECT
   COALESCE(r.realizado, 0) AS realizado,
   COALESCE(m.meta, 0) AS meta,
+  COALESCE(m.meta_movel, 0) AS meta_movel,
   CASE WHEN m.meta > 0 THEN ROUND(COALESCE(r.realizado, 0) / m.meta * 100, 1) ELSE 0 END AS percentual
 FROM receita r, meta m`
 
-        const rows = await executeQuery<{ realizado: number; meta: number; percentual: number }>(sql)
-        const row = rows[0] || { realizado: 0, meta: 0, percentual: 0 }
-        const pct = Number(row.percentual)
-        const status = pct >= 100 ? 'A' : pct >= 80 ? 'B' : pct >= 60 ? 'C' : pct >= 40 ? 'D' : 'E'
+        const rows = await executeQuery<{ realizado: number; meta: number; meta_movel: number; percentual: number }>(sql)
+        const row = rows[0] || { realizado: 0, meta: 0, meta_movel: 0, percentual: 0 }
+        const realizado = Number(row.realizado)
+        const meta = Number(row.meta)
+        const metaMovel = Number(row.meta_movel)
+        let status: 'A' | 'B' | 'C' | 'D' | 'E' = 'E'
+        if (meta > 0 && (realizado / meta) * 100 >= 100) status = 'A'
+        else if (metaMovel > 0) {
+          const pctMovel = (realizado / metaMovel) * 100
+          if (pctMovel >= 80) status = 'B'
+          else if (pctMovel >= 50) status = 'C'
+          else if (pctMovel >= 0.1) status = 'D'
+          else status = 'E'
+        } else if (realizado >= 0.1) status = 'D'
 
         return {
           success: true,
           data: { ...row, status },
-          summary: `Propriedade ${params.property_id}: R$ ${Number(row.realizado).toFixed(2)} de R$ ${Number(row.meta).toFixed(2)} (${pct}%) - Status ${status}.`,
+          summary: `Propriedade ${params.property_id}: R$ ${realizado.toFixed(2)} de R$ ${meta.toFixed(2)} (Meta Movel R$ ${metaMovel.toFixed(2)}) - Status ${status}.`,
         }
       } catch (error) {
         return {
