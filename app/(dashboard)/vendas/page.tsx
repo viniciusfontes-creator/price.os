@@ -631,8 +631,15 @@ export default function SalesPage() {
             else if ((gap / noitesParaVendaEfetiva) < precoMinAbsoluto) suggestedAction = "PISO MÍNIMO (DIV 20)"
             else suggestedAction = "ATUAR NO PREÇO SUGERIDO"
 
-            let fallbackTargetPeriodId = ""
-            if (periods.length > 0) fallbackTargetPeriodId = periods[0].id
+            // Derive target month from lead time so the modal opens on the property's reference month
+            // instead of an arbitrary period[0]
+            const fallbackTargetDate = new Date(hoje)
+            fallbackTargetDate.setDate(hoje.getDate() + Math.round(aggregatedRacMode || 0))
+            const fallbackMesAlvo = fallbackTargetDate.getMonth() + 1
+            const fallbackAnoAlvo = fallbackTargetDate.getFullYear()
+            const fallbackPrefix = `${fallbackAnoAlvo}-${String(fallbackMesAlvo).padStart(2, '0')}`
+            const fallbackTargetPeriodId =
+                periods.find(p => p.type === 'month' && p.startDate.startsWith(fallbackPrefix))?.id ?? ''
 
             return {
                 id: item.propriedade.idpropriedade,
@@ -647,6 +654,8 @@ export default function SalesPage() {
                 suggestedPrice,
                 currentPrice: item.metricas.precoMedioNoite || 0,
                 leadTime: aggregatedRacMode,
+                mesAlvo: fallbackMesAlvo,
+                anoAlvo: fallbackAnoAlvo,
                 targetPeriodId: fallbackTargetPeriodId,
                 nightsSoldMonth: noitesVendidas,
                 availableNightsMonth: noitesLivresTotal,
@@ -1456,10 +1465,18 @@ export default function SalesPage() {
                                                     rawData={rawData}
                                                     periods={periods}
                                                     selectedPeriodId={
+                                                        // Always anchor the calendar to the property's reference month (mesAlvo/anoAlvo)
+                                                        // — never fall back to periods[0] which renders an unrelated month.
+                                                        (dialogMetrics
+                                                            ? periods.find(p =>
+                                                                p.type === 'month' &&
+                                                                p.startDate.startsWith(
+                                                                    `${dialogMetrics.year}-${String(dialogMetrics.monthOneBased).padStart(2, '0')}`
+                                                                )
+                                                            )?.id
+                                                            : null) ||
                                                         (selectedUnit as any).targetPeriodId ||
-                                                        (dialogMetrics ? periods.find(p => p.type === 'month' && p.startDate.startsWith(`${dialogMetrics.year}-${String(dialogMetrics.monthOneBased).padStart(2, '0')}`))?.id : null) ||
-                                                        periods.find(p => p.type === 'month' && p.endDate >= new Date().toISOString())?.id || 
-                                                        periods[0].id
+                                                        ''
                                                     }
                                                     pracaSeasonalityMap={pracaSeasonalityMap}
                                                     fallbackYear={dialogMetrics?.year}

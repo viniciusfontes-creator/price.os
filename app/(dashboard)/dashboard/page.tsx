@@ -1,9 +1,10 @@
 "use client"
 
+import Link from "next/link"
 import { useMemo } from "react"
 import { InitialLoadingScreen, DashboardSkeleton } from "@/components/page-skeleton"
 import { KeyMetricsPanel } from "@/components/key-metrics-panel"
-import { BarChart3, Database, RefreshCw, Loader2 } from "lucide-react"
+import { BarChart3, Database, RefreshCw, Loader2, FileBarChart, ArrowRight } from "lucide-react"
 import { AnalyticsCharts } from "@/components/analytics-charts"
 import { DailySalesRanking } from "@/components/daily-sales-ranking"
 import { PartnernameSalesRanking } from "@/components/partnername-sales-ranking"
@@ -81,7 +82,25 @@ export default function Dashboard() {
         </div>
       )}
 
-
+      <Link
+        href={`/relatorios/mensal/${(() => {
+          const d = new Date()
+          d.setMonth(d.getMonth() + (d.getDate() > 25 ? 1 : 0))
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+        })()}`}
+        className="group flex items-center gap-3 rounded-lg border border-blue-200 bg-gradient-to-r from-blue-50 to-violet-50 p-4 transition-all hover:border-blue-300 hover:shadow-sm"
+      >
+        <div className="h-10 w-10 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
+          <FileBarChart className="h-5 w-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-foreground">Relatório Mensal Completo</p>
+          <p className="text-xs text-muted-foreground">
+            KPIs, status A-E, quick-wins acionáveis, ocupação prevista, comparativo YoY e ranking — tudo em uma página.
+          </p>
+        </div>
+        <ArrowRight className="h-5 w-5 text-blue-600 transition-transform group-hover:translate-x-0.5" />
+      </Link>
 
       {/* Global Filters */}
       <FilterBar filterOptions={filterOptions} />

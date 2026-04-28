@@ -15,6 +15,7 @@ import {
   Calculator,
   GitCompare,
   BrainCircuit,
+  FileBarChart,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -127,6 +128,11 @@ const allMenuItems: MenuItem[] = [
         icon: LinkIcon,
       },
     ],
+  },
+  {
+    title: "Relatório Mensal",
+    href: "/relatorios/mensal",
+    icon: FileBarChart,
   },
   {
     title: "Intelligence Hub",

@@ -339,3 +339,156 @@ export interface HistoricoMensal {
   meta: number
   percentualAtingimento: number
 }
+
+// ============================================
+// MONTHLY REPORT TYPES
+// ============================================
+
+export type DimensionRow = {
+  key: string
+  otb: number
+  meta: number
+  metaMovel: number
+  gap: number
+  pctMeta: number
+  status: "A" | "B" | "C" | "D" | "E"
+  nProps: number
+  nReservas: number
+  noites: number
+}
+
+export type QuickWinTipo = "OVERPRICED" | "UNDERPRICED" | "ALIGNED"
+
+export type QuickWin = {
+  tipo: QuickWinTipo
+  propertyId: string
+  nome: string
+  praca: string
+  grupo_nome: string
+  sub_grupo?: string
+  recomendacao: string
+  precoAtual: number
+  precoSugerido: number
+  noitesRestantes: number
+  ocupacaoOTB: number
+  gap: number
+  impactoR$: number
+  prioridade: 1 | 2 | 3
+  phs: number
+  status: "A" | "B" | "C" | "D" | "E"
+}
+
+export type OccupancyDayStatus = "ocupado" | "disponivel" | "manutencao" | "block"
+
+export type OccupancyRow = {
+  propertyId: string
+  nome: string
+  praca: string
+  grupo_nome: string
+  status: "A" | "B" | "C" | "D" | "E"
+  dias: Array<{ date: string; status: OccupancyDayStatus }>
+  noitesVendidas: number
+  noitesDisponiveis: number
+  noitesBloqueadas: number
+  ocupacaoPct: number
+}
+
+export type Gap = {
+  propertyId: string
+  nome: string
+  praca: string
+  tipo: "fds_livre" | "intervalo_3a5" | "intervalo_longo"
+  inicio: string
+  fim: string
+  nights: number
+}
+
+export type RankRow = {
+  propertyId: string
+  nome: string
+  praca: string
+  grupo_nome: string
+  otb: number
+  meta: number
+  gap: number
+  pctMeta: number
+  status: "A" | "B" | "C" | "D" | "E"
+  nReservas: number
+  ticketMedio: number
+}
+
+export type PickupPoint = {
+  date: string
+  offset: number
+  cumulativo: number
+  reservas: number
+}
+
+export type MonthlyReportPayload = {
+  mes: string
+  asOf: string
+  daysInMonth: number
+  daysElapsed: number
+  daysRemaining: number
+  monthHasStarted: boolean
+  filterOptions: {
+    pracas: string[]
+    grupos: string[]
+    status: string[]
+    canais: string[]
+  }
+  kpis: {
+    metaMensal: number
+    metaMovel: number
+    otb: number
+    otbPct: number
+    adrOTB: number
+    ocupacaoOTB: number
+    ticketMedioOTB: number
+    antecedenciaMedia: number
+    totalReservasOTB: number
+    noitesVendidasOTB: number
+    noitesDisponiveis: number
+  }
+  statusDistribution: { A: number; B: number; C: number; D: number; E: number }
+  porPraca: DimensionRow[]
+  porGrupo: DimensionRow[]
+  porCanal: Array<{ canal: string; receita: number; reservas: number; share: number }>
+  ocupacao: OccupancyRow[]
+  gaps: Gap[]
+  rankings: {
+    topOTB: RankRow[]
+    overMeta: RankRow[]
+    emRisco: RankRow[]
+  }
+  quickWins: QuickWin[]
+  yoy: {
+    mai2025Receita: number
+    mai2026OTB: number
+    deltaPct: number
+    porPraca: Array<{ praca: string; mai2025: number; mai2026OTB: number; deltaPct: number }>
+  }
+  pickup: {
+    atual: PickupPoint[]
+    baseline: PickupPoint[]
+    baselineYear: number
+  }
+  itensPropriedade: Array<{
+    propertyId: string
+    nome: string
+    praca: string
+    grupo_nome: string
+    sub_grupo?: string
+    canalMaior?: string
+    meta: number
+    metaMovel: number
+    otb: number
+    pctMeta: number
+    status: "A" | "B" | "C" | "D" | "E"
+    nReservas: number
+    noites: number
+    ticketMedio: number
+    adr: number
+    precoAtual: number
+  }>
+}
