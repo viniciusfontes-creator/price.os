@@ -6,6 +6,7 @@
  */
 
 import { NextResponse } from 'next/server'
+import { sqlAtivaFilter } from '@/lib/bigquery-queries'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -30,7 +31,7 @@ SELECT
 FROM
   \`warehouse.propriedades_subgrupos\`
 WHERE
-  status_aparente = 'Ativa'
+  ${sqlAtivaFilter(null)}
 `
 
 export async function GET() {

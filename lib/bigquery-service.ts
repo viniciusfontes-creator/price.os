@@ -6,6 +6,7 @@
  */
 
 import { executeQuery } from './bigquery-client'
+import { sqlAtivaFilter } from './bigquery-queries'
 import { calculatePropertyStatus } from '@/lib/calculations'
 import type {
     WebhookPropriedade,
@@ -134,7 +135,7 @@ export interface BQAirbnbCompetitor {
 // ============================================
 
 function getSqlPropriedades(viewContext?: string): string {
-    let filter = "p.status_aparente = 'Ativa'"
+    let filter = sqlAtivaFilter('p')
 
     if (viewContext === 'short-stay') {
         filter += " AND p.empreendimento_pousada IN ('Short Stay', 'Alto Padrão')"

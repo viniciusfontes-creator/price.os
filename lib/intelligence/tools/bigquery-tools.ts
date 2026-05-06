@@ -5,6 +5,7 @@
 
 import type { ToolDefinition, ToolResult } from '../types'
 import { executeQuery } from '@/lib/bigquery-client'
+import { sqlAtivaFilter } from '@/lib/bigquery-queries'
 
 async function safeQuery<T>(sql: string): Promise<ToolResult> {
   try {
@@ -88,7 +89,7 @@ export const bigqueryTools: ToolDefinition[] = [
         'r.buyprice > 0',
         'r.reservetotal > 0',
         "LOWER(r.type) NOT LIKE '%canceled%'",
-        "p.status_aparente = 'Ativa'",
+        sqlAtivaFilter('p'),
       ]
 
       if (params.property_id) {
@@ -315,7 +316,7 @@ performance AS (
   FROM \`warehouse.propriedades_subgrupos\` p
   LEFT JOIN receita r ON p.idpropriedade = r.idpropriedade
   LEFT JOIN metas m ON p.idpropriedade = m.idpropriedade
-  WHERE p.status_aparente = 'Ativa'
+  WHERE ${sqlAtivaFilter('p')}
     ${typeFilter}
     ${pracaFilter}
     ${grupoFilter}
@@ -399,7 +400,7 @@ FROM (
   GROUP BY 1, 2
 ) o
 JOIN \`warehouse.propriedades_subgrupos\` p ON o.idpropriedade = p.idpropriedade
-WHERE p.status_aparente = 'Ativa'
+WHERE ${sqlAtivaFilter('p')}
   ${typeFilter}
   ${pracaFilter}
 GROUP BY o.idpropriedade, p.nomepropriedade, p.praca, p.grupo_nome
@@ -444,7 +445,7 @@ ORDER BY noites_disponiveis DESC`
     requiresConfirmation: false,
     allowedAgents: ['analyst', 'pricing', 'market', 'operations'],
     execute: async (params) => {
-      const conditions = ["p.status_aparente = 'Ativa'"]
+      const conditions = [sqlAtivaFilter('p')]
 
       if (params.search) {
         const search = String(params.search).replace(/'/g, "''")
@@ -521,7 +522,7 @@ LIMIT 50`
         "r.partnername <> 'External API'",
         'r.buyprice > 0',
         "LOWER(r.type) NOT LIKE '%canceled%'",
-        "p.status_aparente = 'Ativa'",
+        sqlAtivaFilter('p'),
       ]
       if (params.date_start) {
         conditions.push(

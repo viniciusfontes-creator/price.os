@@ -1,0 +1,285 @@
+{
+  "name": "Sub-workflow: Metas por Unidade",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "idpropriedade", "type": "string" },
+            { "name": "nomepropriedade", "type": "string" },
+            { "name": "praca", "type": "string" },
+            { "name": "quartos", "type": "number" },
+            { "name": "latitude", "type": "string" },
+            { "name": "longitude", "type": "string" },
+            { "name": "titulo", "type": "string" },
+            { "name": "proprietario", "type": "string" },
+            { "name": "meses_faltantes", "type": "array" },
+            { "name": "recordID", "type": "string" }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-6800, -400],
+      "id": "a1000000-0000-0000-0000-000000000001",
+      "name": "When called by another workflow"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "p-nome",  "name": "Nome interno",          "value": "={{ $json.nomepropriedade }}", "type": "string" },
+            { "id": "p-rec",   "name": "recordID",              "value": "={{ $json.recordID }}",        "type": "string" },
+            { "id": "p-tit",   "name": "titulo",                "value": "={{ $json.titulo }}",          "type": "string" },
+            { "id": "p-prc",   "name": "praca",                 "value": "={{ $json.praca }}",           "type": "string" },
+            { "id": "p-qtd",   "name": "quartos",               "value": "={{ $json.quartos }}",         "type": "number" },
+            { "id": "p-prop",  "name": "nome do proprietário",  "value": "={{ $json.proprietario }}",    "type": "string" },
+            { "id": "p-lat",   "name": "latitude",              "value": "={{ $json.latitude }}",        "type": "string" },
+            { "id": "p-lon",   "name": "longitude",             "value": "={{ $json.longitude }}",       "type": "string" },
+            { "id": "p-id",    "name": "idpropriedade",         "value": "={{ $json.idpropriedade }}",   "type": "string" },
+            { "id": "p-mes",   "name": "meses_faltantes",       "value": "={{ $json.meses_faltantes }}", "type": "array" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-6480, -400],
+      "id": "a1000000-0000-0000-0000-000000000002",
+      "name": "Prepara os dados"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM buscar_imoveis_semelhantes(\n  {{ $json.latitude }},\n  {{ $json.longitude }},\n  {{ $json.quartos }},\n  5\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-6160, -400],
+      "id": "a1000000-0000-0000-0000-000000000003",
+      "name": "Buscar imóveis semelhantes",
+      "credentials": {
+        "postgres": { "id": "LZPaPnwcpU0hucM1", "name": "Supabase - Qaviinvest" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn items.map(item => ({\n  propertyvalue: item.json.valor_imovel,\n  squaremeters: item.json['metros quadrados'],\n  bedrooms: item.json.quartos,\n  propertyAppreciation: item.json.valorizacao_percentual,\n  monthlyDailyRate: item.json.analysisJSON?.monthlyDailyRate,\n  monthlyOccupancy: item.json.analysisJSON?.monthlyOccupancy\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-5840, -400],
+      "id": "a1000000-0000-0000-0000-000000000004",
+      "name": "Limpeza"
+    },
+    {
+      "parameters": {
+        "modelId": { "__rl": true, "mode": "list", "value": "models/gemini-flash-lite-latest" },
+        "messages": {
+          "values": [
+            {
+              "content": "=## IMÓVEL ALVO\n- Localização: {{ $('Prepara os dados').item.json.titulo }}\n- Latitude: {{ $('Prepara os dados').item.json.latitude }}\n- Longitude: {{ $('Prepara os dados').item.json.longitude }}\n- Quartos: {{ $('Prepara os dados').item.json.quartos }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {
+          "systemMessage": "=Você é uma calculadora de Investimentos Imobiliários de alta precisão especializado em aluguel por temporada no Brasil.\n\n## MISSÃO\nSintetizar os dados reais da base histórica para gerar uma análise de rentabilidade para o imóvel alvo.\n\n## DADOS REAIS DE MERCADO (raio 5km)\n{{ JSON.stringify($('Limpeza').all().map(i => i.json), null, 2) }}\n\n## PRINCÍPIOS\n1. PESO POR SIMILARIDADE: maior peso para imóveis com mesmo número de quartos e área próxima. Ignore imóveis com discrepância de área > 50%.\n\n## TAREFA\n- propertyValue = média ponderada com desconto de 10–20%.\n- propertyAppreciation = média da vizinhança.\n\n## SAÍDA (JSON puro, sem markdown):\n{ \"propertyValue\": 850000, \"propertyAppreciation\": 0.08 }"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [-5520, -400],
+      "id": "a1000000-0000-0000-0000-000000000005",
+      "name": "Message a model",
+      "executeOnce": true,
+      "credentials": {
+        "googlePalmApi": { "id": "Lqrh6lZiI23bWMAu", "name": "Google Gemini(PaLM) Api account 2" }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "e-out", "name": "output", "value": "={{ $json.content.parts[0].text }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-5200, -400],
+      "id": "a1000000-0000-0000-0000-000000000006",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn items.map(item => {\n  const outputText = item.json.output || '{}';\n  try {\n    const cleanText = outputText.replace(/\\\\n/g, '').replace(/\\\\/g, '');\n    const data = JSON.parse(cleanText);\n    return { json: { propertyValue: data.propertyValue || null, propertyAppreciation: data.propertyAppreciation || null } };\n  } catch (e) {\n    return { json: { propertyValue: null, propertyAppreciation: null } };\n  }\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-4880, -400],
+      "id": "a1000000-0000-0000-0000-000000000007",
+      "name": "Parse Gemini"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "s-val",   "name": "valor do imóvel",        "value": "={{ $json.propertyValue }}",        "type": "number" },
+            { "id": "s-apr",   "name": "Valorização anual",      "value": "={{ $json.propertyAppreciation }}", "type": "number" },
+            { "id": "s-nome",  "name": "nome interno",           "value": "={{ $('Prepara os dados').item.json['Nome interno'] }}", "type": "string" },
+            { "id": "s-praca", "name": "praca",                  "value": "={{ $('Prepara os dados').item.json.praca }}",           "type": "string" },
+            { "id": "s-prop",  "name": "nome do proprietário",   "value": "={{ $('Prepara os dados').item.json['nome do proprietário'] }}", "type": "string" },
+            { "id": "s-qtd",   "name": "quartos",                "value": "={{ $('Prepara os dados').item.json.quartos }}", "type": "number" },
+            { "id": "s-lat",   "name": "latitude",               "value": "={{ $('Prepara os dados').item.json.latitude }}", "type": "string" },
+            { "id": "s-lon",   "name": "longitude",              "value": "={{ $('Prepara os dados').item.json.longitude }}", "type": "string" },
+            { "id": "s-tit",   "name": "titulo",                 "value": "={{ $('Prepara os dados').item.json.titulo }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-4560, -400],
+      "id": "a1000000-0000-0000-0000-000000000008",
+      "name": "Salva os dados"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true, "value": "qavi-425611", "mode": "list",
+          "cachedResultName": "Qavi",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=qavi-425611"
+        },
+        "sqlQuery": "WITH reservas_2025 AS (\n  SELECT r.idPropriedade, p.praca, r.reserveTotal, r.pricePerNight, r.nightCount,\n    PARSE_DATE('%d-%m-%Y', r.checkoutdate) AS checkoutdate_parsed,\n    CASE CAST(SPLIT(r.checkoutdate, '-')[1] AS INT64)\n      WHEN 1 THEN 'Janeiro' WHEN 2 THEN 'Fevereiro' WHEN 3 THEN 'Março'\n      WHEN 4 THEN 'Abril'   WHEN 5 THEN 'Maio'      WHEN 6 THEN 'Junho'\n      WHEN 7 THEN 'Julho'   WHEN 8 THEN 'Agosto'    WHEN 9 THEN 'Setembro'\n      WHEN 10 THEN 'Outubro' WHEN 11 THEN 'Novembro' WHEN 12 THEN 'Dezembro'\n    END AS mes,\n    CAST(SPLIT(r.checkoutdate, '-')[1] AS INT64) AS mes_num\n  FROM `warehouse.reservas_all` r\n  INNER JOIN `warehouse.propriedades_subgrupos` p ON r.idPropriedade = p.idPropriedade\n  WHERE r.type != 'canceled' AND r.reserveTotal IS NOT NULL AND r.reserveTotal > 0\n    AND r.nightCount IS NOT NULL AND r.nightCount > 0\n    AND EXTRACT(YEAR FROM PARSE_DATE('%d-%m-%Y', r.checkoutdate)) = 2025\n    AND p.praca IS NOT NULL AND p.empreendimento_pousada = 'Short Stay' AND p.status_aparente = 'Ativa'\n),\npropriedades_qualificadas AS (\n  SELECT idPropriedade FROM reservas_2025 GROUP BY idPropriedade HAVING SUM(nightCount) > 120\n),\nreservas_filtradas AS (\n  SELECT r.* FROM reservas_2025 r INNER JOIN propriedades_qualificadas pq USING (idPropriedade)\n),\nfaturamento_por_propriedade_mes AS (\n  SELECT idPropriedade, praca, mes, mes_num,\n    COUNT(*) AS total_reservas,\n    SUM(reserveTotal) AS faturamento_total_prop,\n    SUM(nightCount) AS total_noites_prop,\n    APPROX_QUANTILES(pricePerNight, 100)[OFFSET(25)] AS q1_diaria,\n    APPROX_QUANTILES(pricePerNight, 100)[OFFSET(50)] AS q2_diaria,\n    APPROX_QUANTILES(pricePerNight, 100)[OFFSET(75)] AS q3_diaria\n  FROM reservas_filtradas\n  GROUP BY idPropriedade, praca, mes, mes_num\n),\nfaturamento_por_propriedade_ano AS (\n  SELECT idPropriedade, praca,\n    COUNT(*) AS total_reservas,\n    SUM(reserveTotal) AS faturamento_total_prop,\n    SUM(nightCount) AS total_noites_prop\n  FROM reservas_filtradas\n  GROUP BY idPropriedade, praca\n),\nestatisticas_praca_mes AS (\n  SELECT praca, mes, mes_num,\n    COUNT(DISTINCT idPropriedade) AS total_propriedades,\n    SUM(total_reservas) AS total_reservas,\n    SUM(faturamento_total_prop) AS faturamento_total,\n    SUM(total_noites_prop) AS total_noites\n  FROM faturamento_por_propriedade_mes\n  GROUP BY praca, mes, mes_num\n),\nestatisticas_praca_ano AS (\n  SELECT praca,\n    COUNT(DISTINCT idPropriedade) AS total_propriedades_ano,\n    SUM(total_reservas) AS total_reservas_ano,\n    SUM(faturamento_total_prop) AS faturamento_total_ano,\n    SUM(total_noites_prop) AS total_noites_ano\n  FROM faturamento_por_propriedade_ano\n  GROUP BY praca\n)\nSELECT m.praca,\n  a.total_propriedades_ano, a.total_reservas_ano,\n  ROUND(a.faturamento_total_ano, 2) AS faturamento_total_ano,\n  a.total_noites_ano,\n  ARRAY_AGG(STRUCT(\n    m.mes, m.total_propriedades, m.total_reservas,\n    ROUND(m.faturamento_total, 2) AS faturamento_total,\n    m.total_noites,\n    ROUND((m.faturamento_total / a.faturamento_total_ano) * 100, 2) AS perc_faturamento_ano,\n    ROUND((m.total_noites / a.total_noites_ano) * 100, 2) AS perc_ocupacao_ano\n  ) ORDER BY m.mes_num) AS detalhamento_mensal\nFROM estatisticas_praca_mes m\nINNER JOIN estatisticas_praca_ano a ON m.praca = a.praca\nGROUP BY m.praca, a.total_propriedades_ano, a.total_reservas_ano, a.faturamento_total_ano, a.total_noites_ano\nORDER BY a.faturamento_total_ano DESC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [-6160, -200],
+      "id": "a1000000-0000-0000-0000-000000000009",
+      "name": "Analise estatística",
+      "credentials": {
+        "googleApi": { "id": "TS9ZqSEUQxK4HrEO", "name": "Google Service Account account 2" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nfunction toNum(v){ if(v==null) return v; if(typeof v==='string'){ const n=Number(v); if(!isNaN(n)&&v.trim()!=='') return n; } return v; }\nconst out = [];\nitems.forEach(item => {\n  const d = item.json;\n  const c = {\n    praca: d.praca,\n    total_propriedades_ano: toNum(d.total_propriedades_ano),\n    total_reservas_ano: toNum(d.total_reservas_ano),\n    faturamento_total_ano: toNum(d.faturamento_total_ano),\n    total_noites_ano: toNum(d.total_noites_ano),\n    detalhamento_mensal: (d.detalhamento_mensal || []).map(m => ({\n      mes: m.mes,\n      total_propriedades: toNum(m.total_propriedades),\n      total_reservas: toNum(m.total_reservas),\n      faturamento_total: toNum(m.faturamento_total),\n      total_noites: toNum(m.total_noites),\n      perc_faturamento_ano: toNum(m.perc_faturamento_ano),\n      perc_ocupacao_ano: toNum(m.perc_ocupacao_ano)\n    }))\n  };\n  out.push({ json: c });\n  if (d.praca === 'Milagres') {\n    const copy = JSON.parse(JSON.stringify(c));\n    copy.praca = 'Maceió';\n    out.push({ json: copy });\n  }\n});\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-5840, -200],
+      "id": "a1000000-0000-0000-0000-000000000010",
+      "name": "Tratamento dos dados"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "fieldsToMatchString": "praca",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [-4240, -280],
+      "id": "a1000000-0000-0000-0000-000000000011",
+      "name": "Merge pelo nome da praça"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "r-ni",    "name": "nomeinterno",          "value": "={{ $json['nome interno'] }}",          "type": "string" },
+            { "id": "r-nom",   "name": "nome",                 "value": "={{ $('Prepara os dados').item.json.titulo }}", "type": "string" },
+            { "id": "r-qtd",   "name": "quartos",              "value": "={{ $('Prepara os dados').item.json.quartos }}", "type": "number" },
+            { "id": "r-val",   "name": "valor do imóvel",      "value": "={{ $json['valor do imóvel'] }}",       "type": "number" },
+            { "id": "r-apr",   "name": "Valorização anual",    "value": "={{ $json['Valorização anual'] }}",     "type": "string" },
+            { "id": "r-prc",   "name": "praca",                "value": "={{ $json.praca }}",                    "type": "string" },
+            { "id": "r-det",   "name": "detalhamento_mensal",  "value": "={{ $json.detalhamento_mensal }}",      "type": "array" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-3920, -280],
+      "id": "a1000000-0000-0000-0000-000000000012",
+      "name": "Salvar os dados"
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData = items[0].json;\nconst valorImovel = inputData['valor do imóvel'] || 0;\nconst metaAnual = valorImovel * 0.14;\nreturn [{\n  json: {\n    cidade: inputData.praca,\n    praca: inputData.praca,\n    quartos: inputData.quartos,\n    detalhamento_mensal: inputData.detalhamento_mensal,\n    nome: inputData.nome,\n    'valor do imóvel': valorImovel,\n    'Valorização anual': inputData['Valorização anual'],\n    proprietario: inputData.proprietario,\n    'meta anual': Number(metaAnual.toFixed(2))\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-3600, -280],
+      "id": "a1000000-0000-0000-0000-000000000013",
+      "name": "Tratar os dados"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = items[0].json;\nconst metaAnual = input['meta anual'];\n\nlet carnaval2025FoiMarço = true;\nconst mesFev = input.detalhamento_mensal.find(m => m.mes === 'Fevereiro');\nconst mesMar = input.detalhamento_mensal.find(m => m.mes === 'Março');\nif (mesMar && mesFev && mesMar.faturamento_total > mesFev.faturamento_total * 1.3) {\n  carnaval2025FoiMarço = true;\n  mesFev.faturamento_total_corrigido = mesMar.faturamento_total;\n  mesFev.total_noites_corrigido = mesMar.total_noites;\n  mesMar.faturamento_total_corrigido = mesFev.faturamento_total;\n  mesMar.total_noites_corrigido = mesFev.total_noites;\n}\n\nlet totalFaturamento = 0;\ninput.detalhamento_mensal.forEach(m => {\n  if (carnaval2025FoiMarço && (m.mes === 'Fevereiro' || m.mes === 'Março')) {\n    totalFaturamento += m.faturamento_total_corrigido || m.faturamento_total || 0;\n  } else {\n    totalFaturamento += m.faturamento_total || 0;\n  }\n});\n\nconst mensal = {};\ninput.detalhamento_mensal.forEach(m => {\n  const noites = m.total_noites || 0;\n  const faturamento = m.faturamento_total || 0;\n  const diariaMedia = noites > 0 ? faturamento / noites : 0;\n  const fc = carnaval2025FoiMarço && (m.mes === 'Fevereiro' || m.mes === 'Março') ? (m.faturamento_total_corrigido || m.faturamento_total) : (m.faturamento_total || 0);\n  const nc = carnaval2025FoiMarço && (m.mes === 'Fevereiro' || m.mes === 'Março') ? (m.total_noites_corrigido || m.total_noites) : (m.total_noites || 0);\n  mensal[m.mes] = { faturamento_original: faturamento, faturamento_corrigido: fc, noites_original: noites, noites_corrigidas: nc, diaria_media: diariaMedia, perc_ocupacao_ano: m.perc_ocupacao_ano || 0 };\n});\n\nconst PERCENTUAL_MINIMO = 0.05;\nconst metaMinimaBase = metaAnual * PERCENTUAL_MINIMO;\nconst distInicial = input.detalhamento_mensal.map(item => {\n  const d = mensal[item.mes];\n  const perc = totalFaturamento > 0 ? d.faturamento_corrigido / totalFaturamento : 1/12;\n  return { mes: item.mes, metaInicial: metaAnual * perc };\n});\n\nlet deficit = 0; const abaixo = []; const acima = [];\ndistInicial.forEach(i => { if (i.metaInicial < metaMinimaBase) { deficit += (metaMinimaBase - i.metaInicial); abaixo.push(i); } else acima.push(i); });\nconst metasAjustadas = {};\nabaixo.forEach(i => metasAjustadas[i.mes] = metaMinimaBase);\nif (acima.length > 0) {\n  const totalAcima = acima.reduce((s, m) => s + m.metaInicial, 0);\n  acima.forEach(i => {\n    const prop = i.metaInicial / totalAcima;\n    metasAjustadas[i.mes] = Math.max(metaMinimaBase, i.metaInicial - (deficit * prop));\n  });\n}\nif (metasAjustadas['Março'] > metasAjustadas['Fevereiro']) {\n  const t = metasAjustadas['Fevereiro']; metasAjustadas['Fevereiro'] = metasAjustadas['Março']; metasAjustadas['Março'] = t;\n}\n\nconst DIAS_ANO = 216;\nconst metaNoitesMensal = {};\ninput.detalhamento_mensal.forEach(item => {\n  const p = item.perc_ocupacao_ano || 8.33;\n  let n = Math.round((p / 100) * DIAS_ANO);\n  metaNoitesMensal[item.mes] = Math.max(12, Math.min(18, n));\n});\nif (metasAjustadas['Fevereiro'] > metasAjustadas['Março'] && metaNoitesMensal['Março'] > metaNoitesMensal['Fevereiro']) {\n  const t = metaNoitesMensal['Fevereiro']; metaNoitesMensal['Fevereiro'] = metaNoitesMensal['Março']; metaNoitesMensal['Março'] = t;\n}\n\nconst meta_distribuicao_mensal = input.detalhamento_mensal.map(item => {\n  const mes = item.mes;\n  const d = mensal[mes];\n  const meta_faturamento = Number(metasAjustadas[mes].toFixed(2));\n  const meta_noites = metaNoitesMensal[mes];\n  const meta_diaria_media = Number((meta_faturamento / meta_noites).toFixed(2));\n  return {\n    mes,\n    percentual_anual: (meta_faturamento / metaAnual * 100).toFixed(1) + '%',\n    noites_ano_passado: d.noites_original,\n    meta_noites_2026: meta_noites,\n    meta_faturamento,\n    meta_diaria_media\n  };\n});\n\nreturn [{ json: { ...input, meta_noites_anual: Object.values(metaNoitesMensal).reduce((a,b)=>a+b,0), meta_distribuicao_mensal } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-3280, -280],
+      "id": "a1000000-0000-0000-0000-000000000014",
+      "name": "Cálculo das metas"
+    },
+    {
+      "parameters": {
+        "jsCode": "const mesesMap = { 'Janeiro':'01','Fevereiro':'02','Março':'03','Abril':'04','Maio':'05','Junho':'06','Julho':'07','Agosto':'08','Setembro':'09','Outubro':'10','Novembro':'11','Dezembro':'12' };\nconst mesesReverso = Object.fromEntries(Object.entries(mesesMap).map(([k,v]) => [v,k]));\n\nconst allData = $input.all();\nconst prepared = $('Prepara os dados').all();\nconst mesesFaltantes = (prepared[0]?.json?.meses_faltantes) || [];\nconst out = [];\nconst hoje = new Date();\n\nfor (const item of allData) {\n  const data = item.json;\n  const idPropriedade = prepared[0]?.json?.idpropriedade || data.idpropriedade || 'ID_NAO_ENCONTRADO';\n  const valoresEntrada = {};\n  (data.meta_distribuicao_mensal || []).forEach(m => { valoresEntrada[m.mes] = m.meta_faturamento; });\n\n  for (let i = 1; i <= 12; i++) {\n    const dataAlvo = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);\n    const mesNum = String(dataAlvo.getMonth() + 1).padStart(2, '0');\n    const anoAlvo = dataAlvo.getFullYear();\n    const mesAno = `${mesNum}/${anoAlvo}`;\n    const nomeMesAlvo = mesesReverso[mesNum];\n    const faturamento = valoresEntrada[nomeMesAlvo] || 0;\n    out.push({ json: { idpropriedade: idPropriedade, mes: mesAno, faturamento_bruto: faturamento, _mes_nome: nomeMesAlvo } });\n  }\n}\n\n// Filtro anti-duplicação: mantém apenas meses declarados como faltantes\nconst filtered = mesesFaltantes.length ? out.filter(x => mesesFaltantes.includes(x.json.mes)) : out;\nreturn filtered;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-2960, -280],
+      "id": "a1000000-0000-0000-0000-000000000015",
+      "name": "Expandir 12 meses + filtrar faltantes"
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "assignments": {
+          "assignments": [
+            { "id": "f-id",  "name": "idpropriedade",  "value": "={{ $json.idpropriedade }}",     "type": "string" },
+            { "id": "f-ma",  "name": "mes_ano",        "value": "={{ $json.mes }}",               "type": "string" },
+            { "id": "f-bn",  "name": "Base_ou_Nova",   "value": "Base",                           "type": "string" },
+            { "id": "f-mt",  "name": "meta",           "value": "={{ $json.faturamento_bruto }}", "type": "number" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-2640, -280],
+      "id": "a1000000-0000-0000-0000-000000000016",
+      "name": "Formatar output"
+    }
+  ],
+  "connections": {
+    "When called by another workflow": { "main": [[{ "node": "Prepara os dados", "type": "main", "index": 0 }]] },
+    "Prepara os dados": { "main": [[
+      { "node": "Buscar imóveis semelhantes", "type": "main", "index": 0 },
+      { "node": "Analise estatística", "type": "main", "index": 0 }
+    ]] },
+    "Buscar imóveis semelhantes": { "main": [[{ "node": "Limpeza", "type": "main", "index": 0 }]] },
+    "Limpeza": { "main": [[{ "node": "Message a model", "type": "main", "index": 0 }]] },
+    "Message a model": { "main": [[{ "node": "Edit Fields", "type": "main", "index": 0 }]] },
+    "Edit Fields": { "main": [[{ "node": "Parse Gemini", "type": "main", "index": 0 }]] },
+    "Parse Gemini": { "main": [[{ "node": "Salva os dados", "type": "main", "index": 0 }]] },
+    "Salva os dados": { "main": [[{ "node": "Merge pelo nome da praça", "type": "main", "index": 0 }]] },
+    "Analise estatística": { "main": [[{ "node": "Tratamento dos dados", "type": "main", "index": 0 }]] },
+    "Tratamento dos dados": { "main": [[{ "node": "Merge pelo nome da praça", "type": "main", "index": 1 }]] },
+    "Merge pelo nome da praça": { "main": [[{ "node": "Salvar os dados", "type": "main", "index": 0 }]] },
+    "Salvar os dados": { "main": [[{ "node": "Tratar os dados", "type": "main", "index": 0 }]] },
+    "Tratar os dados": { "main": [[{ "node": "Cálculo das metas", "type": "main", "index": 0 }]] },
+    "Cálculo das metas": { "main": [[{ "node": "Expandir 12 meses + filtrar faltantes", "type": "main", "index": 0 }]] },
+    "Expandir 12 meses + filtrar faltantes": { "main": [[{ "node": "Formatar output", "type": "main", "index": 0 }]] }
+  },
+  "meta": {
+    "description": "Sub-workflow chamado via Execute Workflow. Calcula metas de 12 meses para a propriedade, filtra só os meses faltantes (anti-duplicação) e retorna N itens com { idpropriedade, mes_ano, Base_ou_Nova, meta } — um por mês. A persistência (BigQuery/Supabase/Sheets) fica a cargo do workflow chamador."
+  }
+}

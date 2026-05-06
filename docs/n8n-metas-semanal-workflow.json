@@ -1,0 +1,314 @@
+{
+  "name": "Semanal: Metas para propriedades ativas sem meta",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "weeks", "triggerAtDay": [1], "triggerAtHour": 6, "triggerAtMinute": 0 }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-6800, -400],
+      "id": "b2000000-0000-0000-0000-000000000001",
+      "name": "Toda segunda 06:00"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true, "value": "qavi-425611", "mode": "list",
+          "cachedResultName": "Qavi",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=qavi-425611"
+        },
+        "sqlQuery": "WITH prox_12_meses AS (\n  SELECT FORMAT_DATE('%m/%Y', DATE_ADD(CURRENT_DATE(), INTERVAL n MONTH)) AS mes_ano\n  FROM UNNEST(GENERATE_ARRAY(1, 12)) AS n\n),\nprops_ativas_com_reserva AS (\n  SELECT DISTINCT\n    p.idpropriedade,\n    p.nomepropriedade,\n    p.praca,\n    p._i_rooms AS quartos,\n    p.latitude,\n    p.longitude,\n    p.grupo_nome AS proprietario\n  FROM `warehouse.propriedades_subgrupos` p\n  INNER JOIN `warehouse.reservas_all` r\n    ON r.idpropriedade = p.idpropriedade\n  WHERE p.status_aparente = 'Ativa'\n    AND p.empreendimento_pousada = 'Short Stay'\n    AND LOWER(r.type) NOT LIKE '%canceled%'\n    AND SAFE_CAST(r.reservetotal AS NUMERIC) > 0\n    AND PARSE_DATE('%d-%m-%Y', r.creationdate) >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)\n    AND p.latitude IS NOT NULL\n    AND p.longitude IS NOT NULL\n),\nmetas_existentes AS (\n  SELECT IdPropriedade AS idpropriedade, mes_ano\n  FROM `stage.metas_checkout_mensais_unidade`\n  WHERE mes_ano IN (SELECT mes_ano FROM prox_12_meses)\n),\ngaps AS (\n  SELECT\n    p.idpropriedade, p.nomepropriedade, p.praca, p.quartos,\n    p.latitude, p.longitude, p.proprietario,\n    m.mes_ano\n  FROM props_ativas_com_reserva p\n  CROSS JOIN prox_12_meses m\n  LEFT JOIN metas_existentes e\n    ON e.idpropriedade = p.idpropriedade AND e.mes_ano = m.mes_ano\n  WHERE e.mes_ano IS NULL\n)\nSELECT\n  idpropriedade,\n  nomepropriedade,\n  praca,\n  quartos,\n  CAST(latitude AS STRING) AS latitude,\n  CAST(longitude AS STRING) AS longitude,\n  proprietario,\n  ARRAY_AGG(mes_ano ORDER BY PARSE_DATE('%m/%Y', mes_ano)) AS meses_faltantes\nFROM gaps\nGROUP BY idpropriedade, nomepropriedade, praca, quartos, latitude, longitude, proprietario\nORDER BY nomepropriedade;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [-6480, -400],
+      "id": "b2000000-0000-0000-0000-000000000002",
+      "name": "Detectar propriedades com gap de meta",
+      "credentials": {
+        "googleApi": { "id": "TS9ZqSEUQxK4HrEO", "name": "Google Service Account account 2" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn items.map(i => ({\n  json: {\n    idpropriedade: i.json.idpropriedade,\n    nomepropriedade: i.json.nomepropriedade,\n    praca: i.json.praca,\n    quartos: Number(i.json.quartos) || 1,\n    latitude: String(i.json.latitude),\n    longitude: String(i.json.longitude),\n    titulo: i.json.nomepropriedade,\n    proprietario: i.json.proprietario,\n    meses_faltantes: Array.isArray(i.json.meses_faltantes) ? i.json.meses_faltantes : [],\n    recordID: ''\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-6160, -400],
+      "id": "b2000000-0000-0000-0000-000000000003",
+      "name": "Normalizar payload"
+    },
+    {
+      "parameters": {
+        "batchSize": 3,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [-5840, -400],
+      "id": "b2000000-0000-0000-0000-000000000004",
+      "name": "Split in Batches (3)"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "SUBSTITUIR_PELO_ID_DO_SUBWORKFLOW",
+          "cachedResultName": "Sub-workflow: Metas por Unidade"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "idpropriedade":   "={{ $json.idpropriedade }}",
+            "nomepropriedade": "={{ $json.nomepropriedade }}",
+            "praca":           "={{ $json.praca }}",
+            "quartos":         "={{ $json.quartos }}",
+            "latitude":        "={{ $json.latitude }}",
+            "longitude":       "={{ $json.longitude }}",
+            "titulo":          "={{ $json.titulo }}",
+            "proprietario":    "={{ $json.proprietario }}",
+            "meses_faltantes": "={{ $json.meses_faltantes }}",
+            "recordID":        "={{ $json.recordID }}"
+          }
+        },
+        "options": { "waitForSubWorkflow": true }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-5520, -400],
+      "id": "b2000000-0000-0000-0000-000000000005",
+      "name": "Execute Workflow (metas-unidade)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recebe N itens long-format { idpropriedade, mes_ano, Base_ou_Nova, meta }\n// Pivota para 1 item wide-format por (idpropriedade, Base_ou_Nova) com cada mes como coluna.\n// Descarta metas zeradas/nulas (proteção contra falha do Gemini).\nconst items = $input.all();\nif (items.length === 0) return [];\n\nconst grupos = {};\nfor (const it of items) {\n  const d = it.json;\n  const metaNum = Number(d.meta);\n  if (!d.mes_ano || !isFinite(metaNum) || metaNum <= 0) continue;\n\n  const key = `${d.idpropriedade}|${d.Base_ou_Nova || 'Base'}`;\n  if (!grupos[key]) {\n    grupos[key] = {\n      IdPropriedade: d.idpropriedade,\n      Base_ou_Nova: d.Base_ou_Nova || 'Base'\n    };\n  }\n  grupos[key][d.mes_ano] = metaNum;\n}\n\nreturn Object.values(grupos)\n  .filter(g => Object.keys(g).length > 2)\n  .map(g => ({ json: g }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-5200, -400],
+      "id": "b2000000-0000-0000-0000-000000000010",
+      "name": "Pivot long→wide"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true, "value": "qavi-425611", "mode": "list",
+          "cachedResultName": "Qavi"
+        },
+        "operation": "lookup",
+        "documentId": {
+          "__rl": true,
+          "value": "1V6TbsyyfUuOZyBOn2pL9yTVGvlumWAn9jxqnO2It1gM",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1913124709,
+          "mode": "list",
+          "cachedResultName": "Viabilidade de venda",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1V6TbsyyfUuOZyBOn2pL9yTVGvlumWAn9jxqnO2It1gM/edit#gid=1913124709"
+        },
+        "filtersUI": {
+          "values": [
+            { "lookupColumn": "IdPropriedade", "lookupValue": "={{ $json.IdPropriedade }}" }
+          ]
+        },
+        "combineFilters": "AND",
+        "options": { "returnFirstMatch": true }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [-4880, -400],
+      "id": "b2000000-0000-0000-0000-000000000020",
+      "name": "Lookup IdPropriedade na planilha",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "0JyDigjvrbQYCG9f", "name": "Google Sheets account" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mescla resultado do lookup com o payload original do pivot.\n// Se o lookup retornou linha → existe na planilha.\n// Se não retornou → propriedade nova.\nconst pivotItems = $('Pivot long→wide').all();\nconst lookupItems = $input.all();\n\nconst out = [];\nfor (let i = 0; i < pivotItems.length; i++) {\n  const payload = pivotItems[i].json;\n  const lookup = lookupItems[i]?.json || {};\n  const existe = !!(lookup && lookup.IdPropriedade);\n  out.push({ json: { ...payload, _existe: existe } });\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-4720, -400],
+      "id": "b2000000-0000-0000-0000-000000000021",
+      "name": "Anexar flag _existe"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-existe",
+              "leftValue": "={{ $json._existe }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-4560, -400],
+      "id": "b2000000-0000-0000-0000-000000000022",
+      "name": "IF propriedade já existe?"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1V6TbsyyfUuOZyBOn2pL9yTVGvlumWAn9jxqnO2It1gM",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1913124709,
+          "mode": "list",
+          "cachedResultName": "Viabilidade de venda",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1V6TbsyyfUuOZyBOn2pL9yTVGvlumWAn9jxqnO2It1gM/edit#gid=1913124709"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["IdPropriedade", "Base_ou_Nova"]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [-4400, -480],
+      "id": "b2000000-0000-0000-0000-000000000023",
+      "name": "Update linha existente",
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "0JyDigjvrbQYCG9f", "name": "Google Sheets account" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1V6TbsyyfUuOZyBOn2pL9yTVGvlumWAn9jxqnO2It1gM",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1913124709,
+          "mode": "list",
+          "cachedResultName": "Viabilidade de venda",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1V6TbsyyfUuOZyBOn2pL9yTVGvlumWAn9jxqnO2It1gM/edit#gid=1913124709"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [-4400, -320],
+      "id": "b2000000-0000-0000-0000-000000000024",
+      "name": "Append nova propriedade",
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "0JyDigjvrbQYCG9f", "name": "Google Sheets account" }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [-4240, -400],
+      "id": "b2000000-0000-0000-0000-000000000025",
+      "name": "Merge update+append"
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "seconds"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [-4080, -400],
+      "id": "b2000000-0000-0000-0000-000000000006",
+      "name": "Aguardar entre batches"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [-5520, -200],
+      "id": "b2000000-0000-0000-0000-000000000007",
+      "name": "Agregar resultados"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lista inicial de propriedades detectadas (antes do loop)\nconst detectadas = $('Detectar propriedades com gap de meta').all();\nconst totalPropriedades = detectadas.length;\nconst totalMetas = detectadas.reduce((acc, it) => {\n  const m = it.json.meses_faltantes;\n  return acc + (Array.isArray(m) ? m.length : 0);\n}, 0);\n\nconst unidades = detectadas.map(it => {\n  const m = Array.isArray(it.json.meses_faltantes) ? it.json.meses_faltantes.length : 0;\n  return `${it.json.idpropriedade} (+${m})`;\n});\n\nconst resumo = totalPropriedades === 0\n  ? 'Automação semanal de metas: nenhuma propriedade com gap detectada. ✅'\n  : `Automação semanal de metas: *${totalPropriedades} propriedades* processadas, *${totalMetas} metas* inseridas.\\nUnidades: ${unidades.slice(0, 25).join(', ')}${unidades.length > 25 ? '…' : ''}`;\n\nreturn [{ json: { totalPropriedades, totalMetas, unidades, resumo } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-5200, -200],
+      "id": "b2000000-0000-0000-0000-000000000008",
+      "name": "Montar resumo"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": { "__rl": true, "mode": "name", "value": "#metas-automacao" },
+        "text": "={{ $json.resumo }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [-4880, -200],
+      "id": "b2000000-0000-0000-0000-000000000009",
+      "name": "Enviar resumo ao Slack",
+      "credentials": {
+        "slackApi": { "id": "SUBSTITUIR_PELA_CREDENCIAL_SLACK", "name": "Slack" }
+      }
+    }
+  ],
+  "connections": {
+    "Toda segunda 06:00": { "main": [[{ "node": "Detectar propriedades com gap de meta", "type": "main", "index": 0 }]] },
+    "Detectar propriedades com gap de meta": { "main": [[{ "node": "Normalizar payload", "type": "main", "index": 0 }]] },
+    "Normalizar payload": { "main": [[{ "node": "Split in Batches (3)", "type": "main", "index": 0 }]] },
+    "Split in Batches (3)": { "main": [
+      [{ "node": "Agregar resultados", "type": "main", "index": 0 }],
+      [{ "node": "Execute Workflow (metas-unidade)", "type": "main", "index": 0 }]
+    ] },
+    "Execute Workflow (metas-unidade)": { "main": [[{ "node": "Pivot long→wide", "type": "main", "index": 0 }]] },
+    "Pivot long→wide": { "main": [[{ "node": "Lookup IdPropriedade na planilha", "type": "main", "index": 0 }]] },
+    "Lookup IdPropriedade na planilha": { "main": [[{ "node": "Anexar flag _existe", "type": "main", "index": 0 }]] },
+    "Anexar flag _existe": { "main": [[{ "node": "IF propriedade já existe?", "type": "main", "index": 0 }]] },
+    "IF propriedade já existe?": { "main": [
+      [{ "node": "Update linha existente", "type": "main", "index": 0 }],
+      [{ "node": "Append nova propriedade", "type": "main", "index": 0 }]
+    ] },
+    "Update linha existente": { "main": [[{ "node": "Merge update+append", "type": "main", "index": 0 }]] },
+    "Append nova propriedade": { "main": [[{ "node": "Merge update+append", "type": "main", "index": 1 }]] },
+    "Merge update+append": { "main": [[{ "node": "Aguardar entre batches", "type": "main", "index": 0 }]] },
+    "Aguardar entre batches": { "main": [[{ "node": "Split in Batches (3)", "type": "main", "index": 0 }]] },
+    "Agregar resultados": { "main": [[{ "node": "Montar resumo", "type": "main", "index": 0 }]] },
+    "Montar resumo": { "main": [[{ "node": "Enviar resumo ao Slack", "type": "main", "index": 0 }]] }
+  },
+  "meta": {
+    "description": "Job semanal (Seg 06:00 BRT). Detecta propriedades ativas com reservas nos últimos 90 dias e meta faltando em algum dos próximos 12 meses. Para cada propriedade: chama sub-workflow metas-unidade (long-format), pivota para wide-format e faz appendOrUpdate na aba 'Viabilidade de venda' do Sheets (que espelha para BigQuery). Reporta resumo no Slack."
+  }
+}

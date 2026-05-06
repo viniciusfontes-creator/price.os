@@ -1,9 +1,30 @@
 /**
  * BigQuery SQL Queries
- * 
+ *
  * Contains all SQL queries for fetching data from BigQuery.
  * These queries are used by MCP BigQuery tools.
  */
+
+/**
+ * Canonical SQL filter for an "ativa" (active) property unit.
+ *
+ * Definition (system-wide): a unit is considered active when
+ *   1. `status_aparente = 'Ativa'`, AND
+ *   2. has at least one reservation with `creationdate` in the last 3 months.
+ *
+ * Pass the table alias used in the outer query (default `p`) or `null` when
+ * the outer query references property columns without an alias.
+ */
+export function sqlAtivaFilter(alias: string | null = 'p'): string {
+  const propIdRef = alias ? `${alias}.idpropriedade` : 'idpropriedade'
+  const statusRef = alias ? `${alias}.status_aparente` : 'status_aparente'
+  return `${statusRef} = 'Ativa'
+  AND EXISTS (
+    SELECT 1 FROM \`warehouse.reservas_all\` r_ativa
+    WHERE CAST(r_ativa.idpropriedade AS STRING) = CAST(${propIdRef} AS STRING)
+      AND SAFE.PARSE_DATE('%d-%m-%Y', r_ativa.creationdate) >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)
+  )`
+}
 
 // SQL #1 - Properties
 export const SQL_PROPERTIES = `
@@ -32,7 +53,7 @@ LEFT JOIN (
   GROUP BY id
 ) t ON p.idpropriedade = t.id
 WHERE
-  p.status_aparente = 'Ativa'
+  ${sqlAtivaFilter('p')}
 `
 
 // SQL #2 - Reservations

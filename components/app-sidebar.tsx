@@ -16,6 +16,9 @@ import {
   GitCompare,
   BrainCircuit,
   FileBarChart,
+  CheckSquare,
+  Sparkles,
+  Tags,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -133,6 +136,24 @@ const allMenuItems: MenuItem[] = [
     title: "Relatório Mensal",
     href: "/relatorios/mensal",
     icon: FileBarChart,
+  },
+  {
+    title: "Sugestões do Estagiário",
+    href: "/sugestoes-estagiario/metas",
+    icon: Sparkles,
+    views: ["short-stay"],
+    subItems: [
+      {
+        title: "Metas",
+        href: "/sugestoes-estagiario/metas",
+        icon: CheckSquare,
+      },
+      {
+        title: "Precificação",
+        href: "/sugestoes-estagiario/precificacao",
+        icon: Tags,
+      },
+    ],
   },
   {
     title: "Intelligence Hub",

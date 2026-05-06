@@ -8,6 +8,7 @@
  */
 
 import type { IntegratedData, WebhookPropriedade, WebhookReserva, WebhookMeta, SalesGoals } from "@/types"
+import { sqlAtivaFilter } from "./bigquery-queries"
 
 // SQL Queries for BigQuery (to be used with MCP execute_sql tool)
 export const BIGQUERY_QUERIES = {
@@ -27,7 +28,7 @@ export const BIGQUERY_QUERIES = {
       SAFE_CAST(p.longitude AS FLOAT64) as longitude,
       SAFE_CAST(p._i_maxguests AS INT64) as _i_maxguests
     FROM \`warehouse.propriedades_subgrupos\` p
-    WHERE p.status_aparente = 'Ativa'
+    WHERE ${sqlAtivaFilter('p')}
   `,
 
     // Reservations for the last 90 days
