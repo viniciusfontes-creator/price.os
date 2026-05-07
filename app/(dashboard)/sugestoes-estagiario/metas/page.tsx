@@ -1028,15 +1028,45 @@ export default function MetasAjustesPage() {
                     <div className="text-lg font-semibold tabular-nums mt-0.5">
                       {fmtBRL(dropOpen.meta_atual)}
                     </div>
+                    {dropOpen.diaria_unidade_12m && Number(dropOpen.diaria_unidade_12m) > 0 && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        ≈{" "}
+                        {Math.ceil(
+                          Number(dropOpen.meta_atual) / Number(dropOpen.diaria_unidade_12m),
+                        )}{" "}
+                        noites a {fmtBRL(dropOpen.diaria_unidade_12m)}
+                      </div>
+                    )}
                   </div>
                   <div className="rounded-lg border p-3">
                     <div className="text-xs text-muted-foreground">Meta sugerida</div>
                     <div className="text-lg font-semibold tabular-nums mt-0.5">
                       {fmtBRL(dropOpen.meta_sugerida)}
                     </div>
-                    <div className="mt-0.5">
+                    <div className="mt-0.5 flex items-center gap-2 flex-wrap">
                       <DeltaBadge delta={Number(dropOpen.delta_pct)} />
+                      {dropOpen.piso_aplicado && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+                          title={
+                            dropOpen.piso_motivo === "ano_passado_20pct"
+                              ? "Piso aplicado: 20% do realizado mesmo mês ano passado"
+                              : "Piso aplicado: 6 noites × diária média (12m)"
+                          }
+                        >
+                          piso ativo
+                        </span>
+                      )}
                     </div>
+                    {dropOpen.diaria_unidade_12m && Number(dropOpen.diaria_unidade_12m) > 0 && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        ≈{" "}
+                        {Math.ceil(
+                          Number(dropOpen.meta_sugerida) / Number(dropOpen.diaria_unidade_12m),
+                        )}{" "}
+                        noites a {fmtBRL(dropOpen.diaria_unidade_12m)}
+                      </div>
+                    )}
                   </div>
                 </div>
 

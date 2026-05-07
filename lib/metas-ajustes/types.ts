@@ -17,6 +17,9 @@ export interface MetaAjusteProposto {
   sinal_similares: number | null
   meta_movel_alvo: number | null
   otb_alvo: number | null
+  diaria_unidade_12m: number | null
+  piso_aplicado: boolean | null
+  piso_motivo: "ano_passado_20pct" | "seis_noites_diaria" | null
   confianca: Confianca | null
   cenario: Cenario | null
   justificativa: string | null
