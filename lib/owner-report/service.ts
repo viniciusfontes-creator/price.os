@@ -140,6 +140,18 @@ export async function createDraftReport(args: {
     assinatura: buildAssinatura(item, periodo, createdByEmail),
   }
 
+  // Slides dependentes começam ocultos no template. Quando os dados existem
+  // no snapshot, viramos visible:true automaticamente — assim o estagiário
+  // não precisa lembrar de ligar manualmente quando há dados disponíveis.
+  const slides = getTemplateSlides(templateKey).map((s) => {
+    if (s.key === "tarifa_mercado" && mercado.tarifaMercado) return { ...s, visible: true }
+    if (s.key === "comparativo_mercado" && mercado.comparativo) return { ...s, visible: true }
+    if (s.key === "eventos_sazonalidade" && eventos && eventos.eventos.length > 0) {
+      return { ...s, visible: true }
+    }
+    return s
+  })
+
   const payload: CreateOwnerReportInput = {
     created_by_email: createdByEmail,
     idpropriedade,
@@ -147,7 +159,7 @@ export async function createDraftReport(args: {
     periodo_inicio: periodo.ini,
     periodo_fim: periodo.fim,
     template_key: templateKey,
-    slides: getTemplateSlides(templateKey),
+    slides,
     snapshot_data: snapshot,
   }
 
