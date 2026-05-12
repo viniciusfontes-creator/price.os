@@ -17,6 +17,12 @@ export function getSupabaseAdmin(): SupabaseClient | null {
             autoRefreshToken: false,
             persistSession: false,
         },
+        global: {
+            // Evita o cache de fetch do Next.js (que congelava valores entre requests
+            // no dev e em routes server-component). cache:'no-store' garante leitura fresca.
+            fetch: (input, init) =>
+                fetch(input, { ...init, cache: "no-store" } as RequestInit),
+        },
     })
 
     return _supabaseAdmin

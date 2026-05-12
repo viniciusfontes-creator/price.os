@@ -16,6 +16,7 @@ import {
   GitCompare,
   BrainCircuit,
   FileBarChart,
+  FileText,
   CheckSquare,
   Sparkles,
   Tags,
@@ -136,6 +137,11 @@ const allMenuItems: MenuItem[] = [
     title: "Relatório Mensal",
     href: "/relatorios/mensal",
     icon: FileBarChart,
+  },
+  {
+    title: "Relatório do Proprietário",
+    href: "/proprietarios/apresentacao",
+    icon: FileText,
   },
   {
     title: "Sugestões do Estagiário",

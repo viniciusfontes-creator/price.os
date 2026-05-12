@@ -58,6 +58,6 @@ export default withAuth(
 export const config = {
     matcher: [
         // Apply auth to all routes except login, onboarding, API routes, and static assets
-        "/((?!login|onboarding|api|_next/static|_next/image|favicon.ico).*)",
+        "/((?!login|onboarding|api|print|brand|share|_next/static|_next/image|favicon.ico).*)",
     ],
 }
