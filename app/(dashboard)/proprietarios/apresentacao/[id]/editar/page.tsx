@@ -75,6 +75,30 @@ const OVERRIDE_FIELDS: Partial<Record<SlideKey, Array<{ key: string; label: stri
       placeholder: "Airbnb continua sendo o principal canal, respondendo por X% da receita…",
     },
   ],
+  tarifa_mercado: [
+    {
+      key: "intro",
+      label: "Comentário sobre a tarifa vs. mercado",
+      placeholder:
+        "Sua tarifa praticada ficou acima/abaixo da mediana de mercado em X dias do período…",
+    },
+  ],
+  comparativo_mercado: [
+    {
+      key: "intro",
+      label: "Comentário sobre o comparativo",
+      placeholder:
+        "Sua unidade está posicionada acima/abaixo da mediana da cesta de concorrentes…",
+    },
+  ],
+  eventos_sazonalidade: [
+    {
+      key: "intro",
+      label: "Comentário sobre eventos & sazonalidade",
+      placeholder:
+        "O período conta com X eventos relevantes que influenciam a demanda na praça…",
+    },
+  ],
   conclusao_proximos_passos: [
     { key: "paragrafo1", label: "Parágrafo de conclusão #1", placeholder: "Resumo executivo do período…" },
     { key: "paragrafo2", label: "Parágrafo de conclusão #2", placeholder: "Considerações sobre a estratégia…" },
