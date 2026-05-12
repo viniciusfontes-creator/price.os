@@ -27,7 +27,7 @@ export const VIEW_CONFIGS: Record<ViewType, ViewConfig> = {
         icon: '🏢',
         color: '#4f46e5',
         gradient: 'from-indigo-500 to-blue-600',
-        allowedPages: ['/', '/dashboard', '/vendas', '/inventory/availability', '/intelligence', '/relatorios', '/sugestoes-estagiario'],
+        allowedPages: ['/', '/dashboard', '/vendas', '/inventory/availability', '/intelligence', '/relatorios', '/sugestoes-estagiario', '/proprietarios'],
         bigqueryFilter: null, // No filter — consolidated view
     },
     'short-stay': {
@@ -41,6 +41,7 @@ export const VIEW_CONFIGS: Record<ViewType, ViewConfig> = {
             '/', '/dashboard', '/vendas', '/inventory/availability',
             '/pricing', '/propriedades', '/propriedades/pricing', '/propriedades/custos', '/propriedades/racionalizacao',
             '/sales-demand', '/concorrencia', '/correlacao', '/intelligence', '/relatorios', '/sugestoes-estagiario',
+            '/proprietarios',
         ],
         bigqueryFilter: "empreendimento_pousada IN ('Short Stay', 'Alto Padrão')",
     },
@@ -55,6 +56,7 @@ export const VIEW_CONFIGS: Record<ViewType, ViewConfig> = {
             '/', '/dashboard', '/vendas', '/inventory/availability',
             '/propriedades', '/propriedades/pricing', '/propriedades/custos', '/propriedades/racionalizacao',
             '/sales-demand', '/intelligence', '/relatorios', '/sugestoes-estagiario',
+            '/proprietarios',
         ],
         bigqueryFilter: "empreendimento_pousada = 'Empreendimento'",
     },
