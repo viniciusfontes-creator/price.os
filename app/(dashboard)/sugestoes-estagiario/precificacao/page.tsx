@@ -444,6 +444,7 @@ function KanbanCard({
   onSelectChange,
   selectable,
   draggable,
+  processing,
 }: {
   p: PricingAjusteProposto
   selected: boolean
@@ -451,20 +452,30 @@ function KanbanCard({
   onSelectChange: (checked: boolean) => void
   selectable: boolean
   draggable: boolean
+  processing: boolean
 }) {
   const delta = Number(p.delta_pct)
   return (
-    <DraggableCard id={p.id} disabled={!draggable}>
+    <DraggableCard id={p.id} disabled={!draggable || processing}>
     <div
-      onClick={onClick}
-      className="group rounded-lg border bg-card p-3 hover:border-primary hover:shadow-sm transition space-y-2"
+      onClick={processing ? undefined : onClick}
+      aria-busy={processing}
+      className={`group relative rounded-lg border bg-card p-3 hover:border-primary hover:shadow-sm transition space-y-2 ${
+        processing ? "opacity-60 pointer-events-none" : ""
+      }`}
     >
+      {processing && (
+        <div className="absolute top-2 right-2 z-10">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+        </div>
+      )}
       <div className="flex items-start gap-2">
         {selectable && (
           <div onClick={(e) => e.stopPropagation()} className="pt-0.5">
             <Checkbox
               checked={selected}
               onCheckedChange={(v) => onSelectChange(Boolean(v))}
+              disabled={processing}
             />
           </div>
         )}
@@ -506,6 +517,7 @@ function KanbanColumn({
   status,
   propostas,
   selected,
+  processingIds,
   onCardClick,
   onSelectChange,
   selectable,
@@ -514,6 +526,7 @@ function KanbanColumn({
   status: PricingStatus
   propostas: PricingAjusteProposto[]
   selected: Set<number>
+  processingIds: Set<number>
   onCardClick: (id: number) => void
   onSelectChange: (id: number, checked: boolean) => void
   selectable: boolean
@@ -545,6 +558,7 @@ function KanbanColumn({
               onSelectChange={(c) => onSelectChange(p.id, c)}
               selectable={selectable && status === "pendente"}
               draggable={dndEnabled && status === "pendente"}
+              processing={processingIds.has(p.id)}
             />
           ))
         )}
@@ -675,6 +689,7 @@ export default function PrecificacaoPage() {
   const [saudeFilter, setSaudeFilter] = useState<string>("")
   const [statusFilter, setStatusFilter] = useState<string>("pendente")
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [processingIds, setProcessingIds] = useState<Set<number>>(new Set())
   const [drawerId, setDrawerId] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [comentario, setComentario] = useState("")
@@ -759,13 +774,41 @@ export default function PrecificacaoPage() {
     }
   }
 
+  function applyOptimistic(ids: number[], acao: "aprovar" | "rejeitar") {
+    const novoStatus: PricingStatus = acao === "aprovar" ? "aprovado" : "rejeitado"
+    const idSet = new Set(ids)
+    mutate(
+      (current) => {
+        if (!current?.data) return current
+        return {
+          ...current,
+          data: current.data.map((p) =>
+            idSet.has(p.id) && p.status === "pendente" ? { ...p, status: novoStatus } : p,
+          ),
+        }
+      },
+      { revalidate: false },
+    )
+  }
+
+  function markProcessing(ids: number[], on: boolean) {
+    setProcessingIds((prev) => {
+      const next = new Set(prev)
+      if (on) ids.forEach((id) => next.add(id))
+      else ids.forEach((id) => next.delete(id))
+      return next
+    })
+  }
+
   async function handleDecide(
     id: number,
     acao: "aprovar" | "rejeitar",
     coment?: string | null,
     valor?: number | null,
   ) {
+    markProcessing([id], true)
     setSubmitting(true)
+    applyOptimistic([id], acao)
     try {
       const res = await fetch(`/api/pricing/ajustes/${id}`, {
         method: "PATCH",
@@ -778,49 +821,65 @@ export default function PrecificacaoPage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Erro")
+      setDrawerId(null)
+      setComentario("")
+      setValorEditado("")
+      await mutate()
       toast({
         title: acao === "aprovar" ? "Proposta aprovada" : "Proposta rejeitada",
         description: `#${id} • ${STATUS_LABEL[json.data.status as PricingStatus]}`,
       })
-      setDrawerId(null)
-      setComentario("")
-      setValorEditado("")
-      mutate()
     } catch (err) {
+      await mutate()
       toast({
         title: "Erro",
         description: err instanceof Error ? err.message : "Falha desconhecida",
         variant: "destructive",
       })
     } finally {
+      markProcessing([id], false)
       setSubmitting(false)
     }
   }
 
   async function handleBulk(acao: "aprovar" | "rejeitar") {
     if (selected.size === 0) return
+    const ids = Array.from(selected)
+    markProcessing(ids, true)
     setSubmitting(true)
+    applyOptimistic(ids, acao)
     try {
       const res = await fetch("/api/pricing/ajustes/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: Array.from(selected), acao }),
+        body: JSON.stringify({ ids, acao }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Erro")
-      toast({
-        title: `${json.processed} propostas ${acao === "aprovar" ? "aprovadas" : "rejeitadas"}`,
-        description: json.skipped > 0 ? `${json.skipped} ignoradas (já decididas)` : undefined,
-      })
+
+      const processed: number = json.processed ?? 0
+      const skippedN: number = json.skipped ?? 0
+      const failedN: number = json.failed ?? 0
+      const descParts: string[] = []
+      if (skippedN > 0) descParts.push(`${skippedN} já decididas`)
+      if (failedN > 0) descParts.push(`${failedN} falharam`)
+
       setSelected(new Set())
-      mutate()
-    } catch (err) {
+      await mutate()
       toast({
-        title: "Erro",
+        title: `${processed} ${acao === "aprovar" ? "aprovadas" : "rejeitadas"}`,
+        description: descParts.length > 0 ? descParts.join(" · ") : undefined,
+        variant: failedN > 0 ? "destructive" : undefined,
+      })
+    } catch (err) {
+      await mutate()
+      toast({
+        title: "Erro ao processar em lote",
         description: err instanceof Error ? err.message : "Falha desconhecida",
         variant: "destructive",
       })
     } finally {
+      markProcessing(ids, false)
       setSubmitting(false)
     }
   }
@@ -1068,6 +1127,7 @@ export default function PrecificacaoPage() {
                     status={status}
                     propostas={propostasPorStatus[status]}
                     selected={selected}
+                    processingIds={processingIds}
                     onCardClick={setDrawerId}
                     onSelectChange={toggleSelect}
                     selectable={userIsApprover}

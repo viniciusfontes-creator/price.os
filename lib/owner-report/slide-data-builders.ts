@@ -209,12 +209,28 @@ export function buildCalendarioOcupacao(
   const end = parseYmd(fim)
   const days: CalendarioOcupacaoData["dias"] = []
 
-  // map yyyy-mm-dd → registro de ocupacao mais relevante (último estado vence)
-  const byDate = new Map<string, { ocupado: number; ocupado_proprietario: number; manutencao: number }>()
+  // Ocupação derivada de reservas (mesma fonte do resumo executivo), não da
+  // stage ocupacaoDisponibilidade — esta última costuma estar vazia/incompleta
+  // para várias propriedades, o que zerava o calendário indevidamente.
+  const ocupadosPorReserva = new Set<string>()
+  for (const r of item.reservas) {
+    if (r.type === "canceled") continue
+    if (!r.checkindate || !r.checkoutdate) continue
+    const ci = parseYmd(r.checkindate)
+    const co = parseYmd(r.checkoutdate) // checkout não conta como noite
+    const cur = new Date(ci)
+    while (cur.getTime() < co.getTime()) {
+      ocupadosPorReserva.add(cur.toISOString().slice(0, 10))
+      cur.setUTCDate(cur.getUTCDate() + 1)
+    }
+  }
+
+  // Bloqueio/manutenção continuam vindo de item.ocupacao (única fonte com
+  // essa distinção). Se não houver registro, o dia cai como "vaga".
+  const byDate = new Map<string, { ocupado_proprietario: number; manutencao: number }>()
   for (const o of item.ocupacao || []) {
     const key = String(o.datas).slice(0, 10)
     byDate.set(key, {
-      ocupado: Number(o.ocupado || 0),
       ocupado_proprietario: Number(o.ocupado_proprietario || 0),
       manutencao: Number(o.manutencao || 0),
     })
@@ -227,12 +243,13 @@ export function buildCalendarioOcupacao(
   const cursor = new Date(start)
   while (cursor.getTime() <= end.getTime()) {
     const ymd = cursor.toISOString().slice(0, 10)
-    const rec = byDate.get(ymd)
     let status: CalendarioOcupacaoData["dias"][number]["status"] = "vaga"
-    if (rec) {
-      if (rec.ocupado) status = "ocupada"
-      else if (rec.ocupado_proprietario) status = "bloqueada"
-      else if (rec.manutencao) status = "manutencao"
+    if (ocupadosPorReserva.has(ymd)) {
+      status = "ocupada"
+    } else {
+      const rec = byDate.get(ymd)
+      if (rec?.ocupado_proprietario) status = "bloqueada"
+      else if (rec?.manutencao) status = "manutencao"
     }
     if (status === "ocupada") ocupadas++
     else if (status === "bloqueada" || status === "manutencao") bloqueadas++

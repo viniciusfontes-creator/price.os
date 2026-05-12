@@ -11,6 +11,8 @@ const bulkSchema = z.object({
   comentario: z.string().max(1000).optional().nullable(),
 })
 
+type BulkFailure = { id: number; error: string }
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions)
   const email = session?.user?.email
@@ -31,6 +33,8 @@ export async function POST(req: Request) {
   }
 
   const novoStatus = parsed.data.acao === "aprovar" ? "aprovado" : "rejeitado"
+  const nowIso = new Date().toISOString()
+  const comentario = parsed.data.comentario ?? null
 
   const { data: pendentes, error: fetchErr } = await supabase
     .from("pricing_ajustes_propostos")
@@ -38,32 +42,79 @@ export async function POST(req: Request) {
     .in("id", parsed.data.ids)
     .eq("status", "pendente")
 
-  if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 })
-  if (!pendentes || pendentes.length === 0) {
-    return NextResponse.json({ ok: true, processed: 0, skipped: parsed.data.ids.length })
+  if (fetchErr) {
+    return NextResponse.json({ error: fetchErr.message }, { status: 500 })
   }
 
-  const ids = pendentes.map((p) => p.id)
-  const nowIso = new Date().toISOString()
+  const skipped = parsed.data.ids.length - (pendentes?.length ?? 0)
+  if (!pendentes || pendentes.length === 0) {
+    return NextResponse.json({
+      ok: true,
+      processed: 0,
+      skipped,
+      failed: 0,
+      processedIds: [],
+      failedIds: [],
+      failures: [] as BulkFailure[],
+    })
+  }
 
-  const updates = pendentes.map((p) => ({
-    id: p.id,
-    status: novoStatus,
-    aprovado_por: email,
-    aprovado_em: nowIso,
-    comentario_revisor: parsed.data.comentario ?? null,
-    baserate_aplicado: novoStatus === "aprovado" ? Number(p.baserate_sugerido) : null,
-  }))
+  // Update database via per-row updates running in parallel.
+  // We avoid `.upsert(...)` because Postgres validates NOT NULL constraints
+  // during the INSERT planning phase (before ON CONFLICT detection), and
+  // several required columns (idpropriedade, periodo_*, baserate_sugerido,
+  // delta_pct) are not part of the patch payload — the upsert would fail.
+  const updateResults = await Promise.allSettled(
+    pendentes.map((p) =>
+      supabase
+        .from("pricing_ajustes_propostos")
+        .update({
+          status: novoStatus,
+          aprovado_por: email,
+          aprovado_em: nowIso,
+          comentario_revisor: comentario,
+          baserate_aplicado:
+            novoStatus === "aprovado" ? Number(p.baserate_sugerido) : null,
+        })
+        .eq("id", p.id)
+        .eq("status", "pendente")
+        .select("id")
+        .single()
+        .then((r) => ({ id: p.id, error: r.error, rowMissing: !r.data })),
+    ),
+  )
 
-  const { error: updErr } = await supabase.from("pricing_ajustes_propostos").upsert(updates)
-  if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+  const processedIds: number[] = []
+  const failures: BulkFailure[] = []
+  for (let i = 0; i < updateResults.length; i++) {
+    const res = updateResults[i]
+    const p = pendentes[i]
+    if (res.status === "fulfilled") {
+      if (res.value.error) {
+        failures.push({ id: p.id, error: res.value.error.message })
+      } else if (res.value.rowMissing) {
+        // Row was no longer pendente (race) — count as skipped silently.
+      } else {
+        processedIds.push(p.id)
+      }
+    } else {
+      failures.push({
+        id: p.id,
+        error:
+          res.reason instanceof Error ? res.reason.message : String(res.reason),
+      })
+    }
+  }
 
-  if (novoStatus === "aprovado") {
+  // Fire webhook for each successfully approved proposal.
+  // Webhook failures are logged on the row but do not roll back approval.
+  if (novoStatus === "aprovado" && processedIds.length > 0) {
     const webhookUrl = process.env.N8N_APLICAR_BASERATE_WEBHOOK_URL
     if (webhookUrl) {
-      await Promise.allSettled(
-        pendentes.map((p) =>
-          fetch(webhookUrl, {
+      const approvedRows = pendentes.filter((p) => processedIds.includes(p.id))
+      const webhookResults = await Promise.allSettled(
+        approvedRows.map(async (p) => {
+          const res = await fetch(webhookUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -72,17 +123,52 @@ export async function POST(req: Request) {
               period_id: p.period_id,
               baserate_aprovado: Number(p.baserate_sugerido),
               aprovado_por: email,
-              comentario_revisor: parsed.data.comentario ?? null,
+              comentario_revisor: comentario,
             }),
-          }),
-        ),
+          })
+          if (!res.ok) {
+            throw new Error(`webhook HTTP ${res.status}`)
+          }
+          return p.id
+        }),
       )
+
+      const webhookErrors: { id: number; error: string }[] = []
+      for (let i = 0; i < webhookResults.length; i++) {
+        const r = webhookResults[i]
+        if (r.status === "rejected") {
+          webhookErrors.push({
+            id: approvedRows[i].id,
+            error:
+              r.reason instanceof Error ? r.reason.message : String(r.reason),
+          })
+        }
+      }
+
+      if (webhookErrors.length > 0) {
+        await Promise.allSettled(
+          webhookErrors.map((e) =>
+            supabase
+              .from("pricing_ajustes_propostos")
+              .update({ apply_error: e.error })
+              .eq("id", e.id),
+          ),
+        )
+        console.error(
+          "[pricing-ajustes/bulk] webhook failures:",
+          webhookErrors,
+        )
+      }
     }
   }
 
   return NextResponse.json({
     ok: true,
-    processed: ids.length,
-    skipped: parsed.data.ids.length - ids.length,
+    processed: processedIds.length,
+    skipped,
+    failed: failures.length,
+    processedIds,
+    failedIds: failures.map((f) => f.id),
+    failures,
   })
 }
