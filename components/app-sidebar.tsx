@@ -20,6 +20,7 @@ import {
   CheckSquare,
   Sparkles,
   Tags,
+  Workflow,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -106,6 +107,11 @@ const allMenuItems: MenuItem[] = [
         title: "Racionalização",
         href: "/propriedades/racionalizacao",
         icon: GitCompare,
+      },
+      {
+        title: "Onboarding",
+        href: "/propriedades/onboarding",
+        icon: Workflow,
       },
     ],
   },

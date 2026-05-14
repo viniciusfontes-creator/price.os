@@ -39,7 +39,7 @@ export const VIEW_CONFIGS: Record<ViewType, ViewConfig> = {
         gradient: 'from-sky-500 to-blue-600',
         allowedPages: [
             '/', '/dashboard', '/vendas', '/inventory/availability',
-            '/pricing', '/propriedades', '/propriedades/pricing', '/propriedades/custos', '/propriedades/racionalizacao',
+            '/pricing', '/propriedades', '/propriedades/pricing', '/propriedades/custos', '/propriedades/racionalizacao', '/propriedades/onboarding',
             '/sales-demand', '/concorrencia', '/correlacao', '/intelligence', '/relatorios', '/sugestoes-estagiario',
             '/proprietarios',
         ],
@@ -54,7 +54,7 @@ export const VIEW_CONFIGS: Record<ViewType, ViewConfig> = {
         gradient: 'from-blue-600 to-indigo-700',
         allowedPages: [
             '/', '/dashboard', '/vendas', '/inventory/availability',
-            '/propriedades', '/propriedades/pricing', '/propriedades/custos', '/propriedades/racionalizacao',
+            '/propriedades', '/propriedades/pricing', '/propriedades/custos', '/propriedades/racionalizacao', '/propriedades/onboarding',
             '/sales-demand', '/intelligence', '/relatorios', '/sugestoes-estagiario',
             '/proprietarios',
         ],
