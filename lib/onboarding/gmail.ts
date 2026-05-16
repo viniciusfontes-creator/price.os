@@ -3,11 +3,13 @@
  *
  * Em dry-run NÃO envia — só loga assunto, destinatário e snippet do HTML.
  *
- * Em produção usa OAuth2 com refresh token (mesma conta Gmail vinculada
- * no n8n: viniciusfontes@quartoavista.com.br).
+ * Em produção delega ao workflow n8n [Price.OS Proxy] Gmail send que
+ * reusa a credencial OAuth da conta viniciusfontes@quartoavista.com.br.
+ * Fallback: OAuth direto via googleapis se GMAIL_OAUTH_* estiverem setados.
  */
 
 import { isDryRun } from "./constants"
+import { sendEmailViaProxy } from "./n8n-proxy"
 
 export interface SendEmailInput {
     to: string
@@ -30,15 +32,19 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
         return { skipped: true }
     }
 
+    // Caminho padrão: proxy n8n reusa OAuth do Gmail já cadastrado lá.
+    if (!process.env.GMAIL_OAUTH_REFRESH_TOKEN) {
+        const r = await sendEmailViaProxy(input.to, input.subject, input.htmlBody)
+        return { skipped: false, messageId: r.messageId }
+    }
+
+    // Fallback: OAuth direto via googleapis (caso credenciais Gmail estejam no Vercel)
     const clientId = process.env.GMAIL_OAUTH_CLIENT_ID
     const clientSecret = process.env.GMAIL_OAUTH_CLIENT_SECRET
     const refreshToken = process.env.GMAIL_OAUTH_REFRESH_TOKEN
     const fromEmail = process.env.GMAIL_FROM_EMAIL || "viniciusfontes@quartoavista.com.br"
-
-    if (!clientId || !clientSecret || !refreshToken) {
-        throw new Error(
-            "Credenciais Gmail OAuth ausentes (GMAIL_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN)"
-        )
+    if (!clientId || !clientSecret) {
+        throw new Error("GMAIL_OAUTH_CLIENT_ID/SECRET ausentes para fallback OAuth direto")
     }
 
     const { google } = await import("googleapis")

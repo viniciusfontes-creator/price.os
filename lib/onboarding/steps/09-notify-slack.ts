@@ -6,6 +6,7 @@
  */
 
 import { isDryRun, SLACK_CHANNEL_ONBOARDING } from "../constants"
+import { postSlackViaProxy } from "../n8n-proxy"
 import type { PipelineContext } from "../types"
 
 export interface NotifySlackResult {
@@ -27,29 +28,7 @@ export async function notifySlackPricing(
         return { skipped: true }
     }
 
-    const token = process.env.SLACK_BOT_TOKEN
-    if (!token) {
-        throw new Error("SLACK_BOT_TOKEN env var é obrigatória quando dry-run está OFF")
-    }
-
-    const res = await fetch("https://slack.com/api/chat.postMessage", {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json; charset=utf-8",
-        },
-        body: JSON.stringify({
-            channel: SLACK_CHANNEL_ONBOARDING,
-            text,
-            unfurl_links: false,
-        }),
-    })
-
-    const body = (await res.json()) as { ok: boolean; ts?: string; error?: string }
-    if (!body.ok) {
-        throw new Error(`Slack postMessage failed: ${body.error || res.statusText}`)
-    }
-    return { skipped: false, ts: body.ts }
+    return postSlackViaProxy(SLACK_CHANNEL_ONBOARDING, text)
 }
 
 function buildPricingMessage(
