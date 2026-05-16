@@ -123,22 +123,20 @@ interface AnaliseFinanceira {
 // ============================================
 
 const STATE_LABEL: Record<string, string> = {
-    recebida: "Recebida",
-    em_analise: "Em Análise",
-    estudo_pronto: "Estudo Pronto",
-    apresentado: "Apresentado",
-    aguardando_aprovacao: "Aguardando Aprovação",
-    ativada: "Ativada",
+    fila: "Fila",
+    processamento_ia: "Processamento IA",
+    revisao: "Revisão",
+    aprovacao: "Aprovação",
+    concluido: "Concluído",
     arquivada: "Arquivada",
 }
 
 const STATE_DOT: Record<string, string> = {
-    recebida: "bg-[#8e8e93]",
-    em_analise: "bg-[#007aff]",
-    estudo_pronto: "bg-[#5ac8fa]",
-    apresentado: "bg-[#af52de]",
-    aguardando_aprovacao: "bg-[#ff9500]",
-    ativada: "bg-[#34c759]",
+    fila: "bg-[#8e8e93]",
+    processamento_ia: "bg-[#007aff]",
+    revisao: "bg-[#5ac8fa]",
+    aprovacao: "bg-[#ff9500]",
+    concluido: "bg-[#34c759]",
     arquivada: "bg-[#c7c7cc]",
 }
 
@@ -246,24 +244,24 @@ export default function OnboardingDetailPage() {
         router.push("/propriedades/onboarding")
     }
 
-    async function handleActivate() {
+    async function handleConclude() {
         if (
             !confirm(
-                "Ativar esta unidade?\n\n• Cria a basket de concorrentes com as sugestões aprovadas.\n• Unidade passa a aparecer em Dashboard, Pricing e Vendas.\n\nUse Arquivar se errar."
+                "Concluir este onboarding?\n\n• Envia e-mail ao proprietário\n• Posta no Slack #onboarding-precificação\n• Atualiza Jestor com link do Estudo\n• Cria basket de concorrentes\n• Unidade passa a aparecer em Dashboard, Pricing e Vendas\n\nNão tem desfazer."
             )
         ) {
             return
         }
         setActivating(true)
         try {
-            const res = await fetch(`/api/onboarding/${id}/activate`, {
+            const res = await fetch(`/api/onboarding/${id}/conclude`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ createBasket: true }),
             })
             const j = await res.json()
             if (!res.ok) {
-                alert(`Falha ao ativar: ${j.error || "erro desconhecido"}`)
+                alert(`Falha ao concluir: ${j.error || "erro desconhecido"}`)
                 return
             }
             load()
@@ -296,7 +294,7 @@ export default function OnboardingDetailPage() {
     }
 
     const titulo = data.jestor_payload.rotulo || data.jestor_payload.propriedade || data.idpropriedade
-    const canActivate = data.state !== "ativada" && data.state !== "arquivada"
+    const canConclude = data.state === "aprovacao"
 
     return (
         <div className="-m-6 min-h-[calc(100vh-7rem)] bg-[#fafafa] dark:bg-zinc-950">
@@ -337,10 +335,10 @@ export default function OnboardingDetailPage() {
                                 <Archive className="h-3.5 w-3.5" />
                                 Arquivar
                             </AppleButton>
-                            {canActivate && (
-                                <AppleButton variant="primary" onClick={handleActivate} disabled={activating}>
+                            {canConclude && (
+                                <AppleButton variant="primary" onClick={handleConclude} disabled={activating}>
                                     {activating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                                    Ativar unidade
+                                    Concluir
                                 </AppleButton>
                             )}
                         </div>
@@ -380,7 +378,7 @@ export default function OnboardingDetailPage() {
                 {activeTab === "analise" && <AnaliseTab data={data} onPatch={patchAndReload} />}
                 {activeTab === "estudo" && <PdfPreview src={`/api/onboarding/${id}/pricing-pdf`} title="Estudo de Rentabilidade" driveUrl={data.pdf_url} />}
                 {activeTab === "pitchdeck" && <PdfPreview src={`/api/onboarding/${id}/pitchdeck-pdf`} title="Pitchdeck Qavi.imob" driveUrl={data.pitchdeck_pdf_url} />}
-                {activeTab === "sugestoes" && <SugestoesTab data={data} />}
+                {activeTab === "sugestoes" && <SugestoesTab data={data} onReload={load} />}
                 {activeTab === "historico" && <HistoricoTab events={events} />}
 
                 {/* Timeline footer */}
@@ -776,41 +774,236 @@ function AnaliseTab({
 // Tab: Sugestões
 // ============================================
 
-function SugestoesTab({ data }: { data: OnboardingDetail }) {
+function SugestoesTab({
+    data,
+    onReload,
+}: {
+    data: OnboardingDetail
+    onReload: () => void
+}) {
+    const items = data.suggested_basket?.items || []
+    const [baskets, setBaskets] = React.useState<{ id: string; name: string }[]>([])
+    const [selected, setSelected] = React.useState<Set<number>>(
+        new Set(items.map((it) => it.id_numerica))
+    )
+    const [mode, setMode] = React.useState<"add_to_existing" | "create_new">("create_new")
+    const [chosenBasketId, setChosenBasketId] = React.useState<string>("")
+    const [newName, setNewName] = React.useState<string>(`Onboarding · ${data.idpropriedade}`)
+    const [busy, setBusy] = React.useState(false)
+    const [feedback, setFeedback] = React.useState<{ kind: "ok" | "err"; msg: string } | null>(null)
+
+    React.useEffect(() => {
+        fetch("/api/onboarding/baskets")
+            .then((r) => r.json())
+            .then((j) => {
+                if (j.success) setBaskets(j.data || [])
+            })
+            .catch(() => undefined)
+    }, [])
+
+    const toggle = (id: number) => {
+        setSelected((prev) => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
+
+    async function handleApply() {
+        if (selected.size === 0) {
+            setFeedback({ kind: "err", msg: "Selecione ao menos um concorrente" })
+            return
+        }
+        if (mode === "add_to_existing" && !chosenBasketId) {
+            setFeedback({ kind: "err", msg: "Escolha uma basket existente" })
+            return
+        }
+        setBusy(true)
+        setFeedback(null)
+        const body =
+            mode === "create_new"
+                ? { action: "create_new" as const, name: newName, selectedItemIds: Array.from(selected) }
+                : { action: "add_to_existing" as const, basketId: chosenBasketId, selectedItemIds: Array.from(selected) }
+
+        const res = await fetch(`/api/onboarding/${data.id}/apply-basket`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        })
+        const j = await res.json()
+        setBusy(false)
+        if (!res.ok) {
+            setFeedback({ kind: "err", msg: j.error || "Falha" })
+            return
+        }
+        setFeedback({
+            kind: "ok",
+            msg:
+                mode === "create_new"
+                    ? `Basket criada com ${j.items_inserted} concorrente(s)`
+                    : `${j.items_inserted} adicionado(s)${j.items_skipped_duplicate ? `, ${j.items_skipped_duplicate} já existiam` : ""}`,
+        })
+        onReload()
+    }
+
     return (
         <div className="space-y-6">
-            <SectionCard
-                title="Baserate sugerido"
-                subtitle="Mediana do sub_grupo nos últimos 30 dias — aplicado no botão Ativar"
-            >
-                <div className="text-[28px] font-semibold tabular-nums tracking-[-0.02em] text-[#1d1d1f] dark:text-zinc-100">
-                    {formatBRL(data.suggested_baserate, 0)}
-                </div>
-            </SectionCard>
+            {data.matched_airbnb_listing && (
+                <Card>
+                    <div className="px-5 py-3 flex items-center gap-3 bg-[#e8f5ff] dark:bg-blue-950/20">
+                        <Info className="h-4 w-4 text-[#007aff] shrink-0" strokeWidth={2} />
+                        <p className="text-[12.5px] text-[#3a3a3c] dark:text-zinc-300">
+                            Encontramos um anúncio Airbnb pré-existente desta unidade (≤200m, capacidade compatível):
+                            {" "}
+                            <a href={data.matched_airbnb_listing} target="_blank" rel="noopener" className="text-[#007aff] hover:underline break-all">
+                                ver anúncio →
+                            </a>
+                        </p>
+                    </div>
+                </Card>
+            )}
 
             <SectionCard
-                title={`Basket de concorrentes (${data.suggested_basket?.items?.length || 0})`}
-                subtitle={`raio ${data.suggested_basket?.raio_km ?? "—"}km · capacidade ${data.suggested_basket?.hospedes_alvo ?? "—"} hósp.`}
+                title="Cesta de concorrentes sugerida"
+                subtitle={`${items.length} unidades · raio ${data.suggested_basket?.raio_km ?? "—"}km · capacidade ${data.suggested_basket?.hospedes_alvo ?? "—"} hósp.`}
             >
-                {data.suggested_basket?.items && data.suggested_basket.items.length > 0 ? (
-                    <ul className="divide-y divide-black/[0.06] -mx-5 dark:divide-white/[0.06]">
-                        {data.suggested_basket.items.slice(0, 10).map((item, i) => (
-                            <li key={i} className="px-5 py-2.5 flex items-center gap-3 text-[12.5px]">
-                                <span className="w-5 text-[10px] text-[#86868b] tabular-nums">{i + 1}</span>
-                                <span className="flex-1 truncate text-[#1d1d1f] dark:text-zinc-100">{item.nome_anuncio || "—"}</span>
-                                <span className="w-14 text-right tabular-nums text-[#86868b]">{item.distancia_km?.toFixed(2)}km</span>
-                                <span className="w-20 text-right tabular-nums font-medium">{item.preco_por_noite ? formatBRL(item.preco_por_noite, 0) : "—"}</span>
-                                {item.url_anuncio && (
-                                    <a href={item.url_anuncio} target="_blank" rel="noopener" className="text-[#007aff] hover:opacity-70">
-                                        <ExternalLink className="h-3 w-3" />
-                                    </a>
-                                )}
-                            </li>
-                        ))}
-                    </ul>
+                {items.length === 0 ? (
+                    <p className="text-[12px] text-[#86868b]">
+                        Nenhuma sugestão encontrada (sem coordenadas ou sem vizinhos no raio).
+                    </p>
                 ) : (
-                    <p className="text-[12px] text-[#86868b]">Nenhuma sugestão encontrada (sem coordenadas ou vizinhos no raio).</p>
+                    <>
+                        {/* Lista com checkbox */}
+                        <div className="rounded-lg border border-black/[0.06] divide-y divide-black/[0.04] dark:border-white/[0.08] dark:divide-white/[0.05] mb-5">
+                            <div className="px-3 py-2 flex items-center gap-3 text-[10.5px] uppercase tracking-[0.06em] font-medium text-[#86868b] bg-[#fafafa] dark:bg-zinc-800/50">
+                                <button
+                                    onClick={() =>
+                                        setSelected(selected.size === items.length ? new Set() : new Set(items.map((it) => it.id_numerica)))
+                                    }
+                                    className="text-[#007aff] normal-case text-[11px] font-medium tracking-normal hover:opacity-70"
+                                >
+                                    {selected.size === items.length ? "Desmarcar todos" : "Marcar todos"}
+                                </button>
+                                <span className="ml-auto tabular-nums">
+                                    {selected.size}/{items.length} selecionado(s)
+                                </span>
+                            </div>
+                            {items.map((item, i) => {
+                                const isOn = selected.has(item.id_numerica)
+                                return (
+                                    <label
+                                        key={i}
+                                        className="px-3 py-2 flex items-center gap-3 text-[12.5px] hover:bg-[#fafafa] dark:hover:bg-zinc-800/40 cursor-pointer"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={isOn}
+                                            onChange={() => toggle(item.id_numerica)}
+                                            className="h-3.5 w-3.5 accent-[#007aff]"
+                                        />
+                                        <span className="w-5 text-[10px] text-[#86868b] tabular-nums">{i + 1}</span>
+                                        <span className="flex-1 truncate text-[#1d1d1f] dark:text-zinc-100">{item.nome_anuncio || "—"}</span>
+                                        <span className="w-14 text-right tabular-nums text-[#86868b]">{item.distancia_km?.toFixed(2)}km</span>
+                                        <span className="w-20 text-right tabular-nums font-medium">
+                                            {item.preco_por_noite ? formatBRL(item.preco_por_noite, 0) : "—"}
+                                        </span>
+                                        {item.url_anuncio && (
+                                            <a
+                                                href={item.url_anuncio}
+                                                target="_blank"
+                                                rel="noopener"
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="text-[#007aff] hover:opacity-70"
+                                            >
+                                                <ExternalLink className="h-3 w-3" />
+                                            </a>
+                                        )}
+                                    </label>
+                                )
+                            })}
+                        </div>
+
+                        {/* Toggle de ação */}
+                        <div className="flex items-center gap-2 mb-3 p-1 bg-[#f2f2f7] rounded-lg w-fit dark:bg-zinc-800">
+                            <button
+                                onClick={() => setMode("create_new")}
+                                className={`text-[12px] font-medium px-3 py-1.5 rounded-md transition-all ${
+                                    mode === "create_new"
+                                        ? "bg-white text-[#1d1d1f] shadow-sm dark:bg-zinc-700 dark:text-zinc-100"
+                                        : "text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-zinc-200"
+                                }`}
+                            >
+                                Criar nova cesta
+                            </button>
+                            <button
+                                onClick={() => setMode("add_to_existing")}
+                                className={`text-[12px] font-medium px-3 py-1.5 rounded-md transition-all ${
+                                    mode === "add_to_existing"
+                                        ? "bg-white text-[#1d1d1f] shadow-sm dark:bg-zinc-700 dark:text-zinc-100"
+                                        : "text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-zinc-200"
+                                }`}
+                            >
+                                Adicionar à cesta existente
+                            </button>
+                        </div>
+
+                        {/* Form da ação selecionada */}
+                        {mode === "create_new" ? (
+                            <div className="space-y-2">
+                                <label className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-[#86868b]">
+                                    Nome da nova cesta
+                                </label>
+                                <input
+                                    value={newName}
+                                    onChange={(e) => setNewName(e.target.value)}
+                                    className="w-full text-[13px] bg-[#f5f5f7] border-0 rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#007aff] dark:bg-zinc-800 dark:text-zinc-100"
+                                />
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                <label className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-[#86868b]">
+                                    Cesta existente
+                                </label>
+                                <select
+                                    value={chosenBasketId}
+                                    onChange={(e) => setChosenBasketId(e.target.value)}
+                                    className="w-full text-[13px] bg-[#f5f5f7] border-0 rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#007aff] dark:bg-zinc-800 dark:text-zinc-100"
+                                >
+                                    <option value="">— escolha uma —</option>
+                                    {baskets.map((b) => (
+                                        <option key={b.id} value={b.id}>{b.name}</option>
+                                    ))}
+                                </select>
+                                {baskets.length === 0 && (
+                                    <p className="text-[10.5px] text-[#86868b]">Nenhuma cesta existente cadastrada.</p>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="mt-4 flex items-center justify-between">
+                            {feedback && (
+                                <p className={`text-[11.5px] ${feedback.kind === "ok" ? "text-[#34c759]" : "text-[#ff3b30]"}`}>
+                                    {feedback.msg}
+                                </p>
+                            )}
+                            <button
+                                onClick={handleApply}
+                                disabled={busy || selected.size === 0}
+                                className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-[#007aff] text-white h-8 px-4 text-[12.5px] font-medium hover:bg-[#0066d6] disabled:opacity-50 transition-colors"
+                            >
+                                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                                {mode === "create_new" ? "Criar cesta" : "Adicionar à cesta"}
+                            </button>
+                        </div>
+                    </>
                 )}
+            </SectionCard>
+
+            <SectionCard title="Baserate sugerido" subtitle="Mediana do sub_grupo nos últimos 30 dias">
+                <div className="text-[24px] font-semibold tabular-nums tracking-[-0.02em] text-[#1d1d1f] dark:text-zinc-100">
+                    {formatBRL(data.suggested_baserate, 0)}
+                </div>
             </SectionCard>
 
             <SectionCard title="Sazonalidade padrão" subtitle="Padrão vinculado à praça">
@@ -825,28 +1018,6 @@ function SugestoesTab({ data }: { data: OnboardingDetail }) {
                     <p className="text-[12px] text-[#86868b]">Nenhuma sazonalidade vinculada à praça.</p>
                 )}
             </SectionCard>
-
-            <SectionCard title="Listing Airbnb pré-existente" subtitle="Match por proximidade ≤200m + capacidade compatível">
-                {data.matched_airbnb_listing ? (
-                    <a href={data.matched_airbnb_listing} target="_blank" rel="noopener" className="text-[12.5px] text-[#007aff] hover:underline break-all flex items-start gap-2">
-                        <ExternalLink className="h-3 w-3 mt-1 shrink-0" />
-                        {data.matched_airbnb_listing}
-                    </a>
-                ) : (
-                    <p className="text-[12px] text-[#86868b]">Nenhuma correspondência.</p>
-                )}
-            </SectionCard>
-
-            <Card>
-                <div className="px-5 py-4 flex items-start gap-3 bg-[#fff8e6] dark:bg-amber-900/15">
-                    <Info className="h-4 w-4 text-[#ff9500] shrink-0 mt-0.5" strokeWidth={2} />
-                    <p className="text-[12.5px] text-[#3a3a3c] leading-relaxed dark:text-zinc-300">
-                        O botão <strong>Ativar unidade</strong> (canto superior direito) cria os derivados aprovados
-                        (basket em <span className="font-mono text-[11.5px]">competitor_baskets</span>, baserate, sazonalidades)
-                        e libera a unidade nas Views.
-                    </p>
-                </div>
-            </Card>
         </div>
     )
 }

@@ -25,12 +25,11 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 const ALL_STATES = [
-    "recebida",
-    "em_analise",
-    "estudo_pronto",
-    "apresentado",
-    "aguardando_aprovacao",
-    "ativada",
+    "fila",
+    "processamento_ia",
+    "revisao",
+    "aprovacao",
+    "concluido",
     "arquivada",
 ] as const
 

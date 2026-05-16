@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
             idpropriedade,
             jestor_record_id: jestorRecordId,
             jestor_payload: payload,
-            state: "recebida",
+            state: "fila",
         })
         .select("id, created_at")
         .single()
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
         success: true,
         id: inserted.id,
         idpropriedade,
-        state: "recebida",
+        state: "fila",
         received_at: inserted.created_at,
     }, { status: 201 })
 }

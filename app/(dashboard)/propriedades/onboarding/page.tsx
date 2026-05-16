@@ -2,8 +2,20 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Loader2, AlertCircle, Workflow } from "lucide-react"
+import {
+    DndContext,
+    DragOverlay,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    useDraggable,
+    useDroppable,
+    type DragEndEvent,
+    type DragStartEvent,
+} from "@dnd-kit/core"
+import { Loader2, AlertCircle, Workflow, Sparkles, Inbox, Cpu, Eye, ShieldCheck, CheckCircle2 } from "lucide-react"
 import type { OnboardingCard, OnboardingState } from "@/app/api/onboarding/route"
+import { canTransitionManually, transitionReason } from "@/lib/onboarding/transitions"
 
 // ============================================
 // Configuração das colunas
@@ -14,15 +26,15 @@ interface ColumnConfig {
     label: string
     helper: string
     dot: string
+    Icon: typeof Inbox
 }
 
 const COLUMNS: ColumnConfig[] = [
-    { state: "recebida", label: "Recebida", helper: "Aguardando enriquecimento", dot: "bg-[#8e8e93]" },
-    { state: "em_analise", label: "Em Análise", helper: "Pipeline em execução", dot: "bg-[#007aff]" },
-    { state: "estudo_pronto", label: "Estudo Pronto", helper: "PDF gerado e enviado", dot: "bg-[#5ac8fa]" },
-    { state: "apresentado", label: "Apresentado", helper: "Pitchdeck e e-mail enviados", dot: "bg-[#af52de]" },
-    { state: "aguardando_aprovacao", label: "Aguardando Aprovação", helper: "Operador revisa sugestões", dot: "bg-[#ff9500]" },
-    { state: "ativada", label: "Ativada", helper: "Visível nas Views", dot: "bg-[#34c759]" },
+    { state: "fila", label: "Fila", helper: "Aguardando processamento", dot: "bg-[#8e8e93]", Icon: Inbox },
+    { state: "processamento_ia", label: "Processamento IA", helper: "Pipeline em execução (~30-60s)", dot: "bg-[#007aff]", Icon: Cpu },
+    { state: "revisao", label: "Revisão", helper: "Operador revisa por até 48h", dot: "bg-[#5ac8fa]", Icon: Eye },
+    { state: "aprovacao", label: "Aprovação", helper: "Vitor aprova ou solicita alterações", dot: "bg-[#ff9500]", Icon: ShieldCheck },
+    { state: "concluido", label: "Concluído", helper: "E-mail + Slack disparados, unidade ativa", dot: "bg-[#34c759]", Icon: CheckCircle2 },
 ]
 
 // ============================================
@@ -49,111 +61,164 @@ function formatBRL(v: number | null | undefined): string {
 }
 
 // ============================================
-// Card
+// Card draggable
 // ============================================
 
-function OnboardingCardItem({ card }: { card: OnboardingCard }) {
+function CardItem({ card }: { card: OnboardingCard }) {
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+        id: card.id,
+        data: { card },
+    })
+
     const payload = card.jestor_payload || {}
     const titulo = payload.rotulo || payload.propriedade || card.idpropriedade
     const proprietario = card.owner_name || payload.proprietario
     const localidade = payload.localidade
 
+    // Em processamento_ia, mostra mini progress baseado em event types
+    const isProcessing = card.state === "processamento_ia"
+
     return (
-        <Link href={`/propriedades/onboarding/${card.id}`} className="block group">
-            <article
-                className="rounded-xl border border-black/[0.06] bg-white p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-black/[0.12] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 dark:border-white/[0.08] dark:bg-zinc-900 dark:hover:border-white/[0.16]"
-                style={{ fontFeatureSettings: '"cv11"' }}
-            >
-                <div className="space-y-2.5">
-                    {/* Title */}
-                    <div className="space-y-1">
-                        <h4 className="text-[13px] font-semibold leading-tight text-[#1d1d1f] line-clamp-2 tracking-[-0.01em] dark:text-zinc-100">
-                            {titulo}
-                        </h4>
-                        <div className="flex items-center gap-1.5 text-[10.5px] text-[#86868b] tabular-nums">
-                            <span className="font-mono uppercase tracking-wide">{card.idpropriedade}</span>
-                            {card.jestor_record_id && (
-                                <>
-                                    <span aria-hidden>·</span>
-                                    <span className="font-mono">#{card.jestor_record_id}</span>
-                                </>
+        <div
+            ref={setNodeRef}
+            {...listeners}
+            {...attributes}
+            style={{ opacity: isDragging ? 0.4 : 1 }}
+            className="block group touch-none"
+        >
+            <Link href={`/propriedades/onboarding/${card.id}`} draggable={false} onClick={(e) => e.stopPropagation()}>
+                <article
+                    className="rounded-xl border border-black/[0.06] bg-white p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-black/[0.12] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 cursor-grab active:cursor-grabbing dark:border-white/[0.08] dark:bg-zinc-900 dark:hover:border-white/[0.16]"
+                    style={{ fontFeatureSettings: '"cv11"' }}
+                >
+                    <div className="space-y-2.5">
+                        <div className="space-y-1">
+                            <h4 className="text-[13px] font-semibold leading-tight text-[#1d1d1f] line-clamp-2 tracking-[-0.01em] dark:text-zinc-100">
+                                {titulo}
+                            </h4>
+                            <div className="flex items-center gap-1.5 text-[10.5px] text-[#86868b] tabular-nums">
+                                <span className="font-mono uppercase tracking-wide">{card.idpropriedade}</span>
+                                {card.jestor_record_id && (
+                                    <>
+                                        <span aria-hidden>·</span>
+                                        <span className="font-mono">#{card.jestor_record_id}</span>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        {(proprietario || localidade) && (
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[#515154] dark:text-zinc-400">
+                                {proprietario && <span className="truncate max-w-[180px]">{proprietario}</span>}
+                                {proprietario && localidade && <span className="text-[#c7c7cc]">·</span>}
+                                {localidade && <span>{localidade}</span>}
+                            </div>
+                        )}
+
+                        {isProcessing && <ProcessingProgress />}
+
+                        {!isProcessing && (card.property_value != null || card.meta_anual != null) && (
+                            <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-black/[0.05] dark:border-white/[0.06]">
+                                <div>
+                                    <div className="text-[9.5px] uppercase tracking-[0.08em] text-[#86868b] font-medium">
+                                        Imóvel
+                                    </div>
+                                    <div className="text-[12.5px] font-semibold tabular-nums text-[#1d1d1f] dark:text-zinc-100">
+                                        {formatBRL(card.property_value)}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-[9.5px] uppercase tracking-[0.08em] text-[#86868b] font-medium">
+                                        Meta
+                                    </div>
+                                    <div className="text-[12.5px] font-semibold tabular-nums text-[#007aff]">
+                                        {formatBRL(card.meta_anual)}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-between text-[10px] text-[#86868b] tabular-nums pt-0.5">
+                            <span>{formatRelative(card.created_at)}</span>
+                            {card.operator_email && (
+                                <span className="truncate max-w-[110px]" title={card.operator_email}>
+                                    {card.operator_email.split("@")[0]}
+                                </span>
                             )}
                         </div>
                     </div>
+                </article>
+            </Link>
+        </div>
+    )
+}
 
-                    {/* Meta */}
-                    {(proprietario || localidade) && (
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[#515154] dark:text-zinc-400">
-                            {proprietario && <span className="truncate max-w-[160px]">{proprietario}</span>}
-                            {proprietario && localidade && <span className="text-[#c7c7cc]">·</span>}
-                            {localidade && <span>{localidade}</span>}
-                        </div>
-                    )}
-
-                    {/* KPIs (only when present) */}
-                    {(card.property_value != null || card.meta_anual != null) && (
-                        <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-black/[0.05] dark:border-white/[0.06]">
-                            <div>
-                                <div className="text-[9.5px] uppercase tracking-[0.08em] text-[#86868b] font-medium">
-                                    Imóvel
-                                </div>
-                                <div className="text-[12.5px] font-semibold tabular-nums text-[#1d1d1f] dark:text-zinc-100">
-                                    {formatBRL(card.property_value)}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-[9.5px] uppercase tracking-[0.08em] text-[#86868b] font-medium">
-                                    Meta
-                                </div>
-                                <div className="text-[12.5px] font-semibold tabular-nums text-[#007aff]">
-                                    {formatBRL(card.meta_anual)}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Footer */}
-                    <div className="flex items-center justify-between text-[10px] text-[#86868b] tabular-nums pt-0.5">
-                        <span>{formatRelative(card.created_at)}</span>
-                        {card.operator_email && (
-                            <span className="truncate max-w-[110px]" title={card.operator_email}>
-                                {card.operator_email.split("@")[0]}
-                            </span>
-                        )}
-                    </div>
-                </div>
-            </article>
-        </Link>
+function ProcessingProgress() {
+    return (
+        <div className="flex items-center gap-1.5 pt-1.5 border-t border-black/[0.05] dark:border-white/[0.06]">
+            <Sparkles className="h-3 w-3 text-[#007aff] animate-pulse" strokeWidth={2.5} />
+            <span className="text-[10.5px] font-medium text-[#007aff]">IA processando…</span>
+            <div className="ml-auto flex gap-0.5">
+                <span className="h-1 w-1 rounded-full bg-[#007aff] animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="h-1 w-1 rounded-full bg-[#007aff] animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="h-1 w-1 rounded-full bg-[#007aff] animate-bounce" style={{ animationDelay: "300ms" }} />
+            </div>
+        </div>
     )
 }
 
 // ============================================
-// Coluna
+// Coluna droppable
 // ============================================
 
-function KanbanColumn({ config, cards }: { config: ColumnConfig; cards: OnboardingCard[] }) {
+function Column({
+    config,
+    cards,
+    activeFrom,
+}: {
+    config: ColumnConfig
+    cards: OnboardingCard[]
+    activeFrom: OnboardingState | null
+}) {
+    const allowed = activeFrom == null || canTransitionManually(activeFrom, config.state) || activeFrom === config.state
+    const isSourceColumn = activeFrom === config.state
+    const reason = activeFrom && !allowed ? transitionReason(activeFrom, config.state) : null
+
+    const { setNodeRef, isOver } = useDroppable({
+        id: `col-${config.state}`,
+        data: { state: config.state },
+        disabled: !allowed || isSourceColumn,
+    })
+
+    const Icon = config.Icon
+
     return (
         <section className="flex flex-col w-[300px] shrink-0">
             <header className="px-1 pb-3">
                 <div className="flex items-center gap-2 mb-1">
                     <span className={`h-1.5 w-1.5 rounded-full ${config.dot}`} aria-hidden />
+                    <Icon className="h-3.5 w-3.5 text-[#86868b]" strokeWidth={2} />
                     <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-[#1d1d1f] dark:text-zinc-100">
                         {config.label}
                     </h3>
-                    <span className="ml-auto text-[11px] tabular-nums text-[#86868b]">
-                        {cards.length}
-                    </span>
+                    <span className="ml-auto text-[11px] tabular-nums text-[#86868b]">{cards.length}</span>
                 </div>
                 <p className="text-[11px] text-[#86868b] leading-snug">{config.helper}</p>
             </header>
 
-            <div className="flex flex-col gap-2 min-h-[120px]">
+            <div
+                ref={setNodeRef}
+                className={`flex flex-col gap-2 min-h-[160px] rounded-xl p-1 transition-colors duration-150 ${
+                    isOver && allowed ? "bg-[#007aff]/8 ring-2 ring-[#007aff]/30" : ""
+                } ${activeFrom && !allowed && !isSourceColumn ? "opacity-40" : ""}`}
+                title={reason || undefined}
+            >
                 {cards.length === 0 ? (
                     <div className="flex items-center justify-center h-20 text-[11px] text-[#c7c7cc]">
-                        Vazia
+                        {isOver && allowed ? "Soltar aqui" : "Vazia"}
                     </div>
                 ) : (
-                    cards.map((c) => <OnboardingCardItem key={c.id} card={c} />)
+                    cards.map((c) => <CardItem key={c.id} card={c} />)
                 )}
             </div>
         </section>
@@ -172,8 +237,12 @@ export default function OnboardingKanbanPage() {
     } | null>(null)
     const [loading, setLoading] = React.useState(true)
     const [error, setError] = React.useState<string | null>(null)
+    const [activeCard, setActiveCard] = React.useState<OnboardingCard | null>(null)
+    const [toast, setToast] = React.useState<{ kind: "ok" | "err"; msg: string } | null>(null)
 
-    React.useEffect(() => {
+    const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+
+    const reload = React.useCallback(() => {
         fetch("/api/onboarding")
             .then((r) => r.json())
             .then((j) => {
@@ -188,13 +257,74 @@ export default function OnboardingKanbanPage() {
             .finally(() => setLoading(false))
     }, [])
 
+    React.useEffect(() => {
+        reload()
+        // Auto-refresh leve a cada 15s para refletir avanço do pipeline
+        const t = setInterval(reload, 15000)
+        return () => clearInterval(t)
+    }, [reload])
+
+    React.useEffect(() => {
+        if (!toast) return
+        const t = setTimeout(() => setToast(null), 3000)
+        return () => clearTimeout(t)
+    }, [toast])
+
+    function onDragStart(ev: DragStartEvent) {
+        const card = ev.active.data.current?.card as OnboardingCard | undefined
+        if (card) setActiveCard(card)
+    }
+
+    async function onDragEnd(ev: DragEndEvent) {
+        const card = ev.active.data.current?.card as OnboardingCard | undefined
+        setActiveCard(null)
+        if (!card || !ev.over) return
+
+        const toState = ev.over.data.current?.state as OnboardingState | undefined
+        if (!toState || toState === card.state) return
+
+        if (!canTransitionManually(card.state, toState)) {
+            const reason = transitionReason(card.state, toState) || `Não pode ir de ${card.state} para ${toState}`
+            setToast({ kind: "err", msg: reason })
+            return
+        }
+
+        // Otimista: move localmente
+        setData((prev) => {
+            if (!prev) return prev
+            const by_state = { ...prev.by_state }
+            by_state[card.state] = by_state[card.state].filter((c) => c.id !== card.id)
+            by_state[toState] = [{ ...card, state: toState }, ...(by_state[toState] || [])]
+            return { ...prev, by_state }
+        })
+
+        const res = await fetch(`/api/onboarding/${card.id}/transition`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ to: toState }),
+        })
+        const j = await res.json()
+        if (!res.ok) {
+            setToast({ kind: "err", msg: j.reason || j.error || "Falha" })
+            reload() // reverte otimista
+        } else {
+            const msg =
+                toState === "concluido"
+                    ? "Concluído — e-mail, Slack e Jestor disparados"
+                    : toState === "processamento_ia"
+                    ? "Pipeline disparado em background"
+                    : "Movido"
+            setToast({ kind: "ok", msg })
+            reload()
+        }
+    }
+
     const ativeTotal = data
-        ? data.total - (data.counts.ativada || 0) - (data.counts.arquivada || 0)
+        ? data.total - (data.counts.concluido || 0) - (data.counts.arquivada || 0)
         : 0
 
     return (
         <div className="flex flex-col h-[calc(100vh-7rem)] -m-6 bg-[#fafafa] dark:bg-zinc-950">
-            {/* Toolbar com vibrancy */}
             <div className="sticky top-0 z-10 px-8 py-5 border-b border-black/[0.06] bg-white/80 backdrop-blur-xl supports-[backdrop-filter]:bg-white/60 dark:bg-zinc-950/80 dark:border-white/[0.06]">
                 <div className="flex items-end justify-between">
                     <div>
@@ -202,20 +332,19 @@ export default function OnboardingKanbanPage() {
                             Onboarding
                         </h1>
                         <p className="text-[13px] text-[#86868b] mt-0.5">
-                            Funil de unidades novas — recebimento, análise, apresentação e ativação.
+                            Arraste cards entre colunas para mover. Transições inválidas ficam esmaecidas.
                         </p>
                     </div>
                     {data && (
                         <div className="flex items-center gap-6 text-[12px] tabular-nums">
                             <Metric label="Em andamento" value={ativeTotal} />
-                            <Metric label="Ativadas" value={data.counts.ativada || 0} accent="#34c759" />
+                            <Metric label="Concluídas" value={data.counts.concluido || 0} accent="#34c759" />
                             <Metric label="Arquivadas" value={data.counts.arquivada || 0} accent="#8e8e93" />
                         </div>
                     )}
                 </div>
             </div>
 
-            {/* Content */}
             <div className="flex-1 overflow-hidden">
                 {loading ? (
                     <div className="flex items-center justify-center h-full">
@@ -229,30 +358,61 @@ export default function OnboardingKanbanPage() {
                 ) : data && data.total === 0 ? (
                     <EmptyState />
                 ) : (
-                    <div className="h-full overflow-x-auto">
-                        <div className="flex gap-5 px-8 py-6 h-full min-w-max">
-                            {COLUMNS.map((col) => (
-                                <KanbanColumn
-                                    key={col.state}
-                                    config={col}
-                                    cards={data?.by_state[col.state] || []}
-                                />
-                            ))}
-                            {data && data.counts.arquivada > 0 && (
-                                <KanbanColumn
-                                    config={{
-                                        state: "arquivada",
-                                        label: "Arquivada",
-                                        helper: "Descartados",
-                                        dot: "bg-[#c7c7cc]",
-                                    }}
-                                    cards={data.by_state.arquivada || []}
-                                />
-                            )}
+                    <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+                        <div className="h-full overflow-x-auto">
+                            <div className="flex gap-5 px-8 py-6 h-full min-w-max">
+                                {COLUMNS.map((col) => (
+                                    <Column
+                                        key={col.state}
+                                        config={col}
+                                        cards={data?.by_state[col.state] || []}
+                                        activeFrom={activeCard?.state || null}
+                                    />
+                                ))}
+                                {data && data.counts.arquivada > 0 && (
+                                    <Column
+                                        config={{
+                                            state: "arquivada",
+                                            label: "Arquivada",
+                                            helper: "Descartados",
+                                            dot: "bg-[#c7c7cc]",
+                                            Icon: Workflow,
+                                        }}
+                                        cards={data.by_state.arquivada || []}
+                                        activeFrom={activeCard?.state || null}
+                                    />
+                                )}
+                            </div>
                         </div>
-                    </div>
+
+                        <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.16,1,0.3,1)" }}>
+                            {activeCard ? (
+                                <div className="rotate-2 scale-105 shadow-2xl rounded-xl bg-white p-3.5 border border-black/[0.12] w-[280px]">
+                                    <div className="text-[13px] font-semibold text-[#1d1d1f] line-clamp-2">
+                                        {activeCard.jestor_payload?.rotulo || activeCard.jestor_payload?.propriedade || activeCard.idpropriedade}
+                                    </div>
+                                    <div className="text-[10.5px] text-[#86868b] mt-1 font-mono">{activeCard.idpropriedade}</div>
+                                </div>
+                            ) : null}
+                        </DragOverlay>
+                    </DndContext>
                 )}
             </div>
+
+            {/* Toast */}
+            {toast && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-2 fade-in">
+                    <div
+                        className={`px-4 py-2.5 rounded-full backdrop-blur-xl border text-[12.5px] font-medium shadow-lg ${
+                            toast.kind === "ok"
+                                ? "bg-[#34c759]/95 border-[#34c759] text-white"
+                                : "bg-[#ff3b30]/95 border-[#ff3b30] text-white"
+                        }`}
+                    >
+                        {toast.msg}
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
@@ -260,10 +420,7 @@ export default function OnboardingKanbanPage() {
 function Metric({ label, value, accent }: { label: string; value: number; accent?: string }) {
     return (
         <div className="flex flex-col items-end">
-            <span
-                className="text-[18px] font-semibold tabular-nums"
-                style={{ color: accent || "#1d1d1f" }}
-            >
+            <span className="text-[18px] font-semibold tabular-nums" style={{ color: accent || "#1d1d1f" }}>
                 {value}
             </span>
             <span className="text-[10px] uppercase tracking-wide text-[#86868b]">{label}</span>
@@ -282,14 +439,9 @@ function EmptyState() {
                     Nenhum onboarding em andamento
                 </h3>
                 <p className="text-[13px] text-[#86868b] leading-relaxed">
-                    Os cards aparecem aqui automaticamente quando o operador da Jestor clica no botão
-                    de precificação. Cada propriedade nova entra em <strong className="text-[#1d1d1f] dark:text-zinc-100">Recebida</strong>
-                    {" "}e avança no funil conforme o pipeline processa.
+                    Cards aparecem aqui quando o operador da Jestor clica no botão de precificação.
                 </p>
             </div>
-            <code className="text-[11px] text-[#86868b] border border-black/[0.06] rounded-md px-2.5 py-1 bg-white font-mono dark:border-white/[0.08] dark:bg-zinc-900">
-                POST /api/onboarding/webhook
-            </code>
         </div>
     )
 }

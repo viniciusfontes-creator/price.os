@@ -3,12 +3,11 @@
  */
 
 export type OnboardingState =
-    | "recebida"
-    | "em_analise"
-    | "estudo_pronto"
-    | "apresentado"
-    | "aguardando_aprovacao"
-    | "ativada"
+    | "fila"
+    | "processamento_ia"
+    | "revisao"
+    | "aprovacao"
+    | "concluido"
     | "arquivada"
 
 export interface JestorPayload {

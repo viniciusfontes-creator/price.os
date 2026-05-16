@@ -47,6 +47,7 @@ export interface OnboardingRow {
     enriched_at: string | null
     pdf_generated_at: string | null
     activated_at: string | null
+    revisao_since: string | null
     updated_at: string
 }
 

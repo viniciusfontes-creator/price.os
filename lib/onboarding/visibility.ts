@@ -28,7 +28,7 @@ export async function getOnboardingExcludeIds(): Promise<string[]> {
     const { data, error } = await supabase
         .from("property_onboarding")
         .select("idpropriedade")
-        .neq("state", "ativada")
+        .neq("state", "concluido")
         .neq("state", "arquivada")
 
     if (error) {

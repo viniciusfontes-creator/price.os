@@ -103,7 +103,11 @@ export async function activateUnit(input: ActivateInput): Promise<ActivateResult
         operator_email: input.operatorEmail,
     })
 
-    await transitionState(input.onboardingId, row.idpropriedade, "ativada")
+    // Nota: este step só atualiza state se ainda não estiver em concluido
+    // (a action de Concluir [conclude.ts] já faz a transição final).
+    if (row.state !== "concluido") {
+        await transitionState(input.onboardingId, row.idpropriedade, "concluido")
+    }
     await logEvent(input.onboardingId, row.idpropriedade, "activated", {
         operator: input.operatorEmail,
         basket_id: createdBasketId,
