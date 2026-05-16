@@ -47,6 +47,13 @@ export async function htmlToPdfBuffer(
     try {
         const page = await browser.newPage()
         await page.setContent(html, { waitUntil: "load", timeout: opts.timeoutMs ?? 60000 })
+        // Aguarda requests pendentes (fontes/imagens do Google Fonts) terminarem
+        await page.waitForNetworkIdle({ idleTime: 500, timeout: opts.timeoutMs ?? 60000 }).catch(() => undefined)
+        // Confirma que as web fonts foram efetivamente aplicadas via FontFaceSet
+        await page.evaluate(async () => {
+            const fonts = (document as Document & { fonts?: { ready?: Promise<unknown> } }).fonts
+            if (fonts?.ready) await fonts.ready
+        }).catch(() => undefined)
         const pdfOptions: PDFOptions = {
             format: "A4",
             landscape: !!opts.landscape,

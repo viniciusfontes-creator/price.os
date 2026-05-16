@@ -10,7 +10,7 @@ export interface PitchdeckData {
     idPropriedade: string
 }
 
-const FONT = 'Arial, Helvetica, sans-serif'
+const FONT = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
 const LOGO_QAVI = "https://qimob.app/logo-qavi.png"
 const LOGO_QAV =
     "https://cdn.prod.website-files.com/63977cb1ecc6e0c28d964384/63977e3b4b25e34b04d3e541_QUARTO%20A%20VISTA%20PRINCIPAL.png"
@@ -150,7 +150,7 @@ export function renderOwnerPitchdeckHtml(data: PitchdeckData): string {
   </div>
 </section>`
 
-    return `<!DOCTYPE html><html lang="pt-br"><head><meta charset="UTF-8"><style>@page{size:A4 landscape;margin:0;}html,body{margin:0;padding:0;width:100%;}*{box-sizing:border-box;-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important;}section{position:relative;}img{max-width:100%;}</style></head><body>${slide1}${slideApresentando}${slide2}${slide3}${slide4}${slide5}${slide6}${slide7}</body></html>`
+    return `<!DOCTYPE html><html lang="pt-br"><head><meta charset="UTF-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet"><style>@page{size:A4 landscape;margin:0;}html,body{margin:0;padding:0;width:100%;font-family:${FONT};}*{box-sizing:border-box;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important;}section{position:relative;}img{max-width:100%;}</style></head><body>${slide1}${slideApresentando}${slide2}${slide3}${slide4}${slide5}${slide6}${slide7}</body></html>`
 }
 
 export function pitchdeckFileName(nomePropriedade: string): string {
