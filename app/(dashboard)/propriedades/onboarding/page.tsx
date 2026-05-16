@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import {
     Workflow,
     Loader2,
@@ -113,6 +114,7 @@ function OnboardingCardItem({ card }: { card: OnboardingCard }) {
     const localidade = payload.localidade || "—"
 
     return (
+        <Link href={`/propriedades/onboarding/${card.id}`} className="block">
         <Card className="p-3 hover:border-foreground/20 transition-colors cursor-pointer space-y-2">
             <div className="flex items-start justify-between gap-2">
                 <h4 className="text-sm font-medium leading-tight line-clamp-2">{titulo}</h4>
@@ -163,6 +165,7 @@ function OnboardingCardItem({ card }: { card: OnboardingCard }) {
                 )}
             </div>
         </Card>
+        </Link>
     )
 }
 

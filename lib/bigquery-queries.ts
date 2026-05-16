@@ -15,15 +15,26 @@
  * Pass the table alias used in the outer query (default `p`) or `null` when
  * the outer query references property columns without an alias.
  */
-export function sqlAtivaFilter(alias: string | null = 'p'): string {
+export function sqlAtivaFilter(
+  alias: string | null = 'p',
+  excludeIds: string[] = []
+): string {
   const propIdRef = alias ? `${alias}.idpropriedade` : 'idpropriedade'
   const statusRef = alias ? `${alias}.status_aparente` : 'status_aparente'
+
+  // Sanitiza ids para evitar injection (escapa aspas simples)
+  const exclusion = excludeIds.length
+    ? ` AND CAST(${propIdRef} AS STRING) NOT IN (${excludeIds
+        .map((id) => `'${String(id).replace(/'/g, "''")}'`)
+        .join(',')})`
+    : ''
+
   return `${statusRef} = 'Ativa'
   AND EXISTS (
     SELECT 1 FROM \`warehouse.reservas_all\` r_ativa
     WHERE CAST(r_ativa.idpropriedade AS STRING) = CAST(${propIdRef} AS STRING)
       AND SAFE.PARSE_DATE('%d-%m-%Y', r_ativa.creationdate) >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)
-  )`
+  )${exclusion}`
 }
 
 // SQL #1 - Properties

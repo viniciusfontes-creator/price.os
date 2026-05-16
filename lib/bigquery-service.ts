@@ -7,6 +7,7 @@
 
 import { executeQuery } from './bigquery-client'
 import { sqlAtivaFilter } from './bigquery-queries'
+import { getOnboardingExcludeIds } from '@/lib/onboarding/visibility'
 import { calculatePropertyStatus } from '@/lib/calculations'
 import type {
     WebhookPropriedade,
@@ -134,8 +135,8 @@ export interface BQAirbnbCompetitor {
 // SQL QUERIES (from user specifications)
 // ============================================
 
-function getSqlPropriedades(viewContext?: string): string {
-    let filter = sqlAtivaFilter('p')
+function getSqlPropriedades(viewContext?: string, excludeIds: string[] = []): string {
+    let filter = sqlAtivaFilter('p', excludeIds)
 
     if (viewContext === 'short-stay') {
         filter += " AND p.empreendimento_pousada IN ('Short Stay', 'Alto Padrão')"
@@ -399,7 +400,8 @@ ORDER BY
 // ============================================
 
 export async function getPropriedades(viewContext?: string): Promise<BQPropriedade[]> {
-    return executeQuery<BQPropriedade>(getSqlPropriedades(viewContext))
+    const exclude = await getOnboardingExcludeIds()
+    return executeQuery<BQPropriedade>(getSqlPropriedades(viewContext, exclude))
 }
 
 export async function getReservas(): Promise<BQReserva[]> {

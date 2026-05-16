@@ -28,6 +28,7 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseAdmin } from "@/lib/supabase-server"
+import { runEnrichmentInBackground } from "@/lib/onboarding/pipeline"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -127,7 +128,9 @@ export async function POST(req: NextRequest) {
         payload: { source: "jestor", body: payload },
     })
 
-    // F2: aqui dispararemos o pipeline em background via waitUntil()
+    // Dispara o pipeline em background (fire-and-forget) — não bloqueia o
+    // 201 à Jestor. Steps 1-6 da F2 + F3+ rodam de forma assíncrona.
+    runEnrichmentInBackground(inserted.id, idpropriedade, payload)
 
     return NextResponse.json({
         success: true,
