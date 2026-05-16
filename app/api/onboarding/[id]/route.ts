@@ -11,8 +11,8 @@ import {
     getOnboarding,
     listEvents,
     transitionState,
-    updateOnboarding,
 } from "@/lib/onboarding/repository"
+import { applyEdits, type EditableFields } from "@/lib/onboarding/recalc"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -40,22 +40,46 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const auth = await requireSession()
     if (auth.error) return auth.error
 
-    let body: { notes?: string; operator_email?: string } = {}
+    let body: EditableFields = {}
     try {
-        body = await req.json()
+        body = (await req.json()) as EditableFields
     } catch {
         return NextResponse.json({ error: "Body inválido" }, { status: 400 })
     }
 
-    const row = await getOnboarding(params.id)
-    if (!row) return NextResponse.json({ error: "Não encontrado" }, { status: 404 })
+    // Validação mínima: campos numéricos precisam ser positivos quando enviados
+    const numericChecks: Array<[keyof EditableFields, number]> = [
+        ["property_value", 1],
+        ["meta_anual", 0],
+        ["quartos", 1],
+    ]
+    for (const [field, minimum] of numericChecks) {
+        const v = body[field]
+        if (v != null && (Number.isNaN(Number(v)) || Number(v) < minimum)) {
+            return NextResponse.json(
+                { error: `Campo ${field} inválido: deve ser número ≥ ${minimum}` },
+                { status: 400 }
+            )
+        }
+    }
+    if (body.property_appreciation != null) {
+        const v = Number(body.property_appreciation)
+        if (Number.isNaN(v) || v < 0 || v > 1) {
+            return NextResponse.json(
+                {
+                    error:
+                        "property_appreciation inválido: use decimal entre 0 e 1 (ex.: 0.08 para 8% a.a.)",
+                },
+                { status: 400 }
+            )
+        }
+    }
 
-    await updateOnboarding(params.id, {
-        notes: body.notes ?? row.notes,
-        operator_email: body.operator_email ?? row.operator_email,
-    })
-
-    return NextResponse.json({ success: true })
+    const report = await applyEdits(params.id, body, auth.email!)
+    if (!report.ok) {
+        return NextResponse.json({ error: report.error || "Falha ao aplicar" }, { status: 400 })
+    }
+    return NextResponse.json({ success: true, ...report })
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
