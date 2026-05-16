@@ -32,6 +32,9 @@ import { runEnrichmentInBackground } from "@/lib/onboarding/pipeline"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+// Pipeline completo (~45s): BQ + Gemini + PDF + Drive. waitUntil mantém a
+// function viva após o 201 à Jestor.
+export const maxDuration = 300
 
 interface JestorPayload {
     recordid?: string | number

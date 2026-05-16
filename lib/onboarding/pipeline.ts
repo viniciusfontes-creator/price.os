@@ -279,19 +279,28 @@ export async function runEnrichment(
 }
 
 /**
- * Dispara o pipeline em background (fire-and-forget).
- * Usado pelo webhook para não bloquear a resposta 201 à Jestor.
+ * Dispara o pipeline em background.
  *
- * No Vercel, a function continua executando até maxDuration (60s default).
- * Se precisar mais que isso, migrar para `waitUntil` do @vercel/functions
- * ou para uma queue (Inngest, QStash).
+ * Em produção Vercel usa `waitUntil` do @vercel/functions: a serverless
+ * function retorna 201 imediatamente, mas continua viva até o pipeline
+ * completar (limite 300s para functions, suficiente para os ~45s do
+ * pipeline). Em dev/teste usa fire-and-forget normal.
  */
 export function runEnrichmentInBackground(
     onboardingId: string,
     idpropriedade: string,
     payload: JestorPayload
 ): void {
-    void runEnrichment(onboardingId, idpropriedade, payload).catch((err) => {
+    const job = runEnrichment(onboardingId, idpropriedade, payload).catch((err) => {
         console.error("[onboarding/pipeline] background error:", err)
     })
+
+    if (process.env.VERCEL === "1") {
+        // Import dinâmico para não criar dep no bundle do dev local
+        import("@vercel/functions")
+            .then(({ waitUntil }) => waitUntil(job))
+            .catch((err) => {
+                console.error("[onboarding/pipeline] waitUntil unavailable:", err)
+            })
+    }
 }
