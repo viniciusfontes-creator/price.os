@@ -21,6 +21,9 @@ import {
   Sparkles,
   Tags,
   Workflow,
+  Server,
+  Webhook,
+  Activity,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -171,6 +174,23 @@ const allMenuItems: MenuItem[] = [
     title: "Intelligence Hub",
     href: "/intelligence",
     icon: BrainCircuit,
+  },
+  {
+    title: "Sistema",
+    href: "/system",
+    icon: Server,
+    subItems: [
+      {
+        title: "Status",
+        href: "/system",
+        icon: Activity,
+      },
+      {
+        title: "Webhooks Stays",
+        href: "/system/stays-webhooks",
+        icon: Webhook,
+      },
+    ],
   },
 ]
 

@@ -14,6 +14,7 @@ import {
     type DragStartEvent,
 } from "@dnd-kit/core"
 import { Loader2, AlertCircle, Workflow, Sparkles, Inbox, Cpu, Eye, ShieldCheck, CheckCircle2 } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 import type { OnboardingCard, OnboardingState } from "@/app/api/onboarding/route"
 import { canTransitionManually, transitionReason } from "@/lib/onboarding/transitions"
 
@@ -347,8 +348,32 @@ export default function OnboardingKanbanPage() {
 
             <div className="flex-1 overflow-hidden">
                 {loading ? (
-                    <div className="flex items-center justify-center h-full">
-                        <Loader2 className="h-5 w-5 animate-spin text-[#8e8e93]" />
+                    <div className="h-full overflow-x-auto animate-in fade-in duration-500">
+                        <div className="flex gap-5 px-8 py-6 h-full min-w-max">
+                            {[...Array(5)].map((_, col) => (
+                                <div key={col} className="flex flex-col gap-3 min-w-[280px]">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Skeleton className="h-4 w-4 rounded" />
+                                        <Skeleton className="h-4 w-32" />
+                                        <Skeleton className="h-4 w-6 rounded-full ml-auto" />
+                                    </div>
+                                    {[...Array(3)].map((_, i) => (
+                                        <div key={i} className="bg-card rounded-lg border p-3 space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <Skeleton className="h-4 w-16" />
+                                                <Skeleton className="h-3 w-3 rounded-full ml-auto" />
+                                            </div>
+                                            <Skeleton className="h-5 w-3/4" />
+                                            <Skeleton className="h-3 w-1/2" />
+                                            <div className="flex justify-between pt-1">
+                                                <Skeleton className="h-3 w-20" />
+                                                <Skeleton className="h-3 w-12" />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 ) : error ? (
                     <div className="flex flex-col items-center justify-center h-full gap-3 text-[#86868b]">

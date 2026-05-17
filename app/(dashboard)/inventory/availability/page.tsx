@@ -3,6 +3,7 @@
 import { useDashboardData } from "@/contexts/dashboard-provider"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { PageSkeleton } from "@/components/page-skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -232,12 +233,7 @@ export default function AvailabilityPage() {
   }, [properties, today])
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] gap-3">
-        <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-muted-foreground">Carregando...</p>
-      </div>
-    )
+    return <div className="p-6"><PageSkeleton variant="cards" /></div>
   }
 
   return (

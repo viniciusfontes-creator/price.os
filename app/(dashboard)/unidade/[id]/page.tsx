@@ -4,7 +4,8 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { LoadingSpinner } from "@/components/loading-spinner"
+import { Skeleton } from "@/components/ui/skeleton"
+import { KPICardSkeleton, ChartSkeleton } from "@/components/page-skeleton"
 import { ProgressBar } from "@/components/progress-bar"
 import {
   calculateHistoricoMensal,
@@ -84,10 +85,20 @@ export default function UnidadeDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <LoadingSpinner size="lg" />
-          <p className="text-gray-600">Carregando detalhes da unidade...</p>
+      <div className="p-6 space-y-6 animate-in fade-in duration-500">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+          <Skeleton className="h-9 w-28 rounded-md" />
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => <KPICardSkeleton key={i} />)}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <ChartSkeleton />
+          <ChartSkeleton />
         </div>
       </div>
     )
