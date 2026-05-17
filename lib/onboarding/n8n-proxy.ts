@@ -12,6 +12,7 @@
 
 const DEFAULT_SLACK_URL = "https://n8n.quartoavista.com.br/webhook/priceos-slack"
 const DEFAULT_GMAIL_URL = "https://n8n.quartoavista.com.br/webhook/priceos-gmail"
+const DEFAULT_DRIVE_URL = "https://n8n.quartoavista.com.br/webhook/priceos-drive"
 
 function token(): string {
     const t = process.env.PRICEOS_PROXY_TOKEN
@@ -58,6 +59,42 @@ export async function postSlackViaProxy(
 export interface PostGmailResult {
     skipped: false
     messageId?: string
+}
+
+export interface UploadDriveProxyResult {
+    fileId: string
+    webViewLink: string
+}
+
+export async function uploadDriveViaProxy(input: {
+    fileName: string
+    folderId: string
+    mimeType: string
+    content: Uint8Array
+}): Promise<UploadDriveProxyResult> {
+    const url = process.env.N8N_DRIVE_PROXY_URL || DEFAULT_DRIVE_URL
+    const res = await fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "x-priceos-token": token(),
+        },
+        body: JSON.stringify({
+            fileName: input.fileName,
+            folderId: input.folderId,
+            mimeType: input.mimeType,
+            contentBase64: Buffer.from(input.content).toString("base64"),
+        }),
+    })
+    if (!res.ok) {
+        const body = await res.text().catch(() => "")
+        throw new Error(`n8n Drive proxy falhou: ${res.status} ${body.slice(0, 200)}`)
+    }
+    const json = (await res.json()) as { ok?: boolean; id?: string; webViewLink?: string; error?: string }
+    if (!json.ok || !json.id) {
+        throw new Error(`n8n Drive proxy retornou erro: ${json.error || JSON.stringify(json)}`)
+    }
+    return { fileId: json.id, webViewLink: json.webViewLink || "" }
 }
 
 export async function sendEmailViaProxy(
