@@ -2,9 +2,10 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { FileText, Loader2, Plus } from "lucide-react"
+import { FileText, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { TableSkeleton } from "@/components/page-skeleton"
 
 interface ReportRow {
   id: string
@@ -54,11 +55,7 @@ export default function HistoricoRelatoriosPage() {
         </Button>
       </div>
 
-      {loading && (
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Carregando…
-        </div>
-      )}
+      {loading && <TableSkeleton rows={6} />}
       {error && <p className="text-destructive">{error}</p>}
 
       {!loading && !error && reports.length === 0 && (

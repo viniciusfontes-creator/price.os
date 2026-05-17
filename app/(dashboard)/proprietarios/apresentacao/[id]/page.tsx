@@ -3,10 +3,12 @@
 import * as React from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { ArrowLeft, Download, Edit3, FileText, Loader2, Share2 } from "lucide-react"
+import { ArrowLeft, Download, Edit3, FileText, Share2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import { SLIDE_LABELS, type SlideConfig } from "@/lib/owner-report/templates"
 
 interface Report {
@@ -56,8 +58,36 @@ export default function PreviewPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-muted-foreground py-12">
-        <Loader2 className="h-4 w-4 animate-spin" /> Carregando relatório…
+      <div className="max-w-5xl mx-auto py-6 space-y-6 animate-in fade-in duration-500">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-9 w-9 rounded-md" />
+            <div className="space-y-2">
+              <Skeleton className="h-6 w-64" />
+              <Skeleton className="h-4 w-40" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-24 rounded-md" />
+            <Skeleton className="h-9 w-28 rounded-md" />
+            <Skeleton className="h-9 w-24 rounded-md" />
+          </div>
+        </div>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-48 mb-2" />
+            <Skeleton className="h-3 w-72" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="flex items-center gap-3 p-3 border rounded-lg">
+                <Skeleton className="h-4 w-4 rounded" />
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="h-6 w-16 rounded-full" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       </div>
     )
   }

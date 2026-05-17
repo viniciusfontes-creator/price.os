@@ -35,6 +35,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { TableSkeleton } from "@/components/page-skeleton"
 import {
   Table,
   TableBody,
@@ -1100,11 +1101,7 @@ export default function PrecificacaoPage() {
         </CardContent>
       </Card>
 
-      {isLoading && (
-        <div className="flex items-center justify-center py-12 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando…
-        </div>
-      )}
+      {isLoading && <TableSkeleton rows={8} />}
       {error && <div className="text-center py-8 text-red-600">Erro ao carregar propostas</div>}
 
       {!isLoading && !error && (

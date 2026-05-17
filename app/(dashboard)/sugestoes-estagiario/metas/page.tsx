@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import useSWR from "swr"
 import { useSession } from "next-auth/react"
 import { format } from "date-fns"
@@ -35,6 +35,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { TableSkeleton } from "@/components/page-skeleton"
 import {
   Table,
   TableBody,
@@ -109,6 +110,31 @@ function fmtBRL(v: number | null | undefined) {
 function fmtBRLCompact(v: number) {
   if (Math.abs(v) >= 1000) return `R$ ${(v / 1000).toFixed(1)}k`
   return `R$ ${Math.round(v)}`
+}
+
+function fmtPct(v: number | null | undefined, digits = 0) {
+  if (v == null || !Number.isFinite(Number(v))) return "—"
+  return `${(Number(v) * 100).toFixed(digits)}%`
+}
+
+// ============================================================================
+// LIVE DATA (BQ refresh) — atualiza diariamente OTB / meta móvel / ocupação
+// ============================================================================
+interface LiveEntry {
+  idpropriedade: string
+  mes_ano: string
+  otb_atual: number | null
+  meta_movel_atual: number | null
+  receita_ano_passado: number | null
+  receita_ano_atual: number | null
+  ocupacao_ano_passado: number | null
+  ocupacao_ano_atual: number | null
+  diaria_atual: number | null
+  atualizado_em: string
+}
+
+function liveKey(idprop: string, mesAno: string) {
+  return `${idprop}__${mesAno}`
 }
 
 function StatusBadge({ status }: { status: StatusProposta }) {
@@ -435,6 +461,7 @@ function KanbanCard({
   selectable,
   draggable,
   processing,
+  live,
 }: {
   p: MetaAjusteProposto
   selected: boolean
@@ -443,8 +470,12 @@ function KanbanCard({
   selectable: boolean
   draggable: boolean
   processing: boolean
+  live?: LiveEntry | null
 }) {
   const delta = Number(p.delta_pct)
+  const diaria = Number(live?.diaria_atual ?? p.diaria_unidade_12m) || 0
+  const noitesNecessarias =
+    diaria > 0 ? Math.ceil(Number(p.meta_sugerida) / diaria) : null
   return (
     <DraggableCard id={p.id} disabled={!draggable || processing}>
     <div
@@ -490,29 +521,35 @@ function KanbanCard({
       <div className="grid grid-cols-3 gap-1.5 border-t pt-1.5 text-[10px]">
         <div
           className="min-w-0"
-          title="Pace OTB do mês alvo: OTB ÷ meta móvel, projetado sobre a meta atual"
+          title="Ocupação no mesmo mês: ano passado → ano atual (até hoje). Fonte: stage.ocupacaoDisponibilidade."
         >
-          <div className="text-muted-foreground truncate">Pace OTB</div>
+          <div className="text-muted-foreground truncate">Ocupação Y/Y</div>
           <div className="tabular-nums font-medium truncate">
-            {p.sinal_meta_movel != null ? fmtBRLCompact(Number(p.sinal_meta_movel)) : "—"}
+            {live
+              ? `${fmtPct(live.ocupacao_ano_passado)} → ${fmtPct(live.ocupacao_ano_atual)}`
+              : "…"}
           </div>
         </div>
         <div
           className="min-w-0"
-          title="Realizado no mesmo mês do ano passado (próprio ou mediana do grupo) +10%"
+          title="Receita realizada no mesmo mês: ano passado → ano atual. Fonte: warehouse.reservas_all (checkout)."
         >
-          <div className="text-muted-foreground truncate">Y-1</div>
+          <div className="text-muted-foreground truncate">Receita Y/Y</div>
           <div className="tabular-nums font-medium truncate">
-            {p.sinal_ano_passado != null ? fmtBRLCompact(Number(p.sinal_ano_passado)) : "—"}
+            {live
+              ? `${fmtBRLCompact(Number(live.receita_ano_passado) || 0)} → ${fmtBRLCompact(
+                  Number(live.receita_ano_atual) || 0,
+                )}`
+              : "…"}
           </div>
         </div>
         <div
           className="min-w-0"
-          title="Mediana das metas atuais de unidades do mesmo grupo + nº de quartos para o mesmo mês"
+          title="Noites necessárias = meta sugerida ÷ tarifário atual (diária média)"
         >
-          <div className="text-muted-foreground truncate">Grupo</div>
+          <div className="text-muted-foreground truncate">Noites nec.</div>
           <div className="tabular-nums font-medium truncate">
-            {p.sinal_similares != null ? fmtBRLCompact(Number(p.sinal_similares)) : "—"}
+            {noitesNecessarias != null ? `${noitesNecessarias} noites` : "—"}
           </div>
         </div>
       </div>
@@ -537,6 +574,7 @@ function KanbanColumn({
   onSelectChange,
   selectable,
   dndEnabled,
+  liveByKey,
 }: {
   status: StatusProposta
   propostas: MetaAjusteProposto[]
@@ -546,6 +584,7 @@ function KanbanColumn({
   onSelectChange: (id: number, checked: boolean) => void
   selectable: boolean
   dndEnabled: boolean
+  liveByKey: Map<string, LiveEntry>
 }) {
   // Só permite drop em aprovado/rejeitado (vindo de pendente).
   const canAcceptDrop = dndEnabled && (status === "aprovado" || status === "rejeitado")
@@ -575,6 +614,7 @@ function KanbanColumn({
               selectable={selectable && status === "pendente"}
               draggable={dndEnabled && status === "pendente"}
               processing={processingIds.has(p.id)}
+              live={liveByKey.get(liveKey(p.idpropriedade, p.mes_ano)) ?? null}
             />
           ))
         )}
@@ -705,6 +745,60 @@ export default function MetasAjustesPage() {
   )
 
   const todasPropostas = data?.data ?? []
+
+  // Live data: OTB, meta móvel, ocupação Y/Y, receita Y/Y, diária atual.
+  // Buscamos uma vez por (idpropriedade, mes_ano) presente nas propostas.
+  // Atualiza no mount e quando o conjunto de propostas muda.
+  const [liveByKey, setLiveByKey] = useState<Map<string, LiveEntry>>(new Map())
+  const [liveLoading, setLiveLoading] = useState(false)
+
+  const liveSignature = useMemo(
+    () =>
+      Array.from(
+        new Set(todasPropostas.map((p) => liveKey(p.idpropriedade, p.mes_ano))),
+      )
+        .sort()
+        .join("|"),
+    [todasPropostas],
+  )
+
+  useEffect(() => {
+    if (todasPropostas.length === 0) return
+    const items = Array.from(
+      new Map(
+        todasPropostas.map((p) => [
+          liveKey(p.idpropriedade, p.mes_ano),
+          { idpropriedade: p.idpropriedade, mes_ano: p.mes_ano },
+        ]),
+      ).values(),
+    )
+    let cancelled = false
+    setLiveLoading(true)
+    fetch("/api/metas/ajustes/live", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled || !j?.results) return
+        const next = new Map<string, LiveEntry>()
+        for (const r of j.results as LiveEntry[]) {
+          next.set(liveKey(r.idpropriedade, r.mes_ano), r)
+        }
+        setLiveByKey(next)
+      })
+      .catch((err) => {
+        console.error("[metas] live fetch falhou:", err)
+      })
+      .finally(() => {
+        if (!cancelled) setLiveLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveSignature])
 
   // Filtros aplicam em todos os contextos.
   const propostasFiltradas = useMemo(() => {
@@ -1043,11 +1137,7 @@ export default function MetasAjustesPage() {
       </Card>
 
       {/* Loading / error */}
-      {isLoading && (
-        <div className="flex items-center justify-center py-12 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando…
-        </div>
-      )}
+      {isLoading && <TableSkeleton rows={8} />}
       {error && (
         <div className="text-center py-8 text-red-600">Erro ao carregar propostas</div>
       )}
@@ -1078,6 +1168,7 @@ export default function MetasAjustesPage() {
                     onSelectChange={toggleSelect}
                     selectable={userIsApprover}
                     dndEnabled={userIsApprover}
+                    liveByKey={liveByKey}
                   />
                 ))}
               </div>
@@ -1160,33 +1251,56 @@ export default function MetasAjustesPage() {
                   </div>
                 </div>
 
-                {/* Pace atual (dados brutos do mês alvo) */}
-                <div>
-                  <div className="text-sm font-medium mb-2">Pace atual de {dropOpen.mes_ano}</div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-lg border p-3">
-                      <div className="text-xs text-muted-foreground" title="Reservas já criadas (não-canceladas) com checkout no mês alvo.">
-                        OTB atual
+                {/* Pace atual (dados brutos do mês alvo) — atualizado diariamente via BQ */}
+                {(() => {
+                  const liveRow = liveByKey.get(liveKey(dropOpen.idpropriedade, dropOpen.mes_ano))
+                  const otbDisplay = liveRow?.otb_atual ?? dropOpen.otb_alvo
+                  const mmDisplay = liveRow?.meta_movel_atual ?? dropOpen.meta_movel_alvo
+                  const ratio =
+                    mmDisplay && Number(mmDisplay) > 0
+                      ? (Number(otbDisplay ?? 0) / Number(mmDisplay)) * 100
+                      : null
+                  return (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-sm font-medium">Pace atual de {dropOpen.mes_ano}</div>
+                        {liveRow ? (
+                          <span className="text-[10px] text-muted-foreground" title={liveRow.atualizado_em}>
+                            atualizado{" "}
+                            {format(new Date(liveRow.atualizado_em), "dd/MM HH:mm", { locale: ptBR })}
+                          </span>
+                        ) : liveLoading ? (
+                          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Loader2 className="h-3 w-3 animate-spin" /> sincronizando
+                          </span>
+                        ) : null}
                       </div>
-                      <div className="text-lg font-semibold tabular-nums mt-0.5">
-                        {fmtBRL(dropOpen.otb_alvo)}
-                      </div>
-                    </div>
-                    <div className="rounded-lg border p-3">
-                      <div className="text-xs text-muted-foreground" title="Quanto deveria estar bookado para o mês alvo até hoje (warehouse.meta_e_meta_movel_checkout).">
-                        Meta móvel atual
-                      </div>
-                      <div className="text-lg font-semibold tabular-nums mt-0.5">
-                        {fmtBRL(dropOpen.meta_movel_alvo)}
-                      </div>
-                      {Number(dropOpen.meta_movel_alvo) > 0 && (
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {((Number(dropOpen.otb_alvo ?? 0) / Number(dropOpen.meta_movel_alvo)) * 100).toFixed(0)}% do esperado
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-lg border p-3">
+                          <div className="text-xs text-muted-foreground" title="Reservas já criadas (não-canceladas) com checkout no mês alvo — recalculado a cada acesso.">
+                            OTB atual
+                          </div>
+                          <div className="text-lg font-semibold tabular-nums mt-0.5">
+                            {fmtBRL(otbDisplay)}
+                          </div>
                         </div>
-                      )}
+                        <div className="rounded-lg border p-3">
+                          <div className="text-xs text-muted-foreground" title="Quanto deveria estar bookado para o mês alvo até hoje (warehouse.meta_e_meta_movel_checkout) — recalculado a cada acesso.">
+                            Meta móvel atual
+                          </div>
+                          <div className="text-lg font-semibold tabular-nums mt-0.5">
+                            {fmtBRL(mmDisplay)}
+                          </div>
+                          {ratio != null && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {ratio.toFixed(0)}% do esperado
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  )
+                })()}
 
                 {/* Sinais */}
                 <div>
@@ -1197,14 +1311,14 @@ export default function MetasAjustesPage() {
                         className="text-muted-foreground"
                         title="OTB (reservas já bookadas) do mês alvo ÷ meta móvel do mês alvo, projetado sobre a meta atual."
                       >
-                        Pace OTB do mês alvo
+                        Meta móvel
                       </span>
                       <span className="tabular-nums">{fmtBRL(dropOpen.sinal_meta_movel)}</span>
                     </div>
                     <div className="flex justify-between gap-3">
                       <span
                         className="text-muted-foreground"
-                        title="Realizado no mesmo mês do ano passado (próprio ou mediana do grupo) +10%."
+                        title="Realizado no mesmo mês do ano passado (próprio ou mediana do grupo) +10%. Quando o realizado próprio é R$ 0, o motor cai para a mediana do grupo — o rótulo 'Histórico próprio' na justificativa pode estar enganando."
                       >
                         Histórico ano passado
                       </span>
@@ -1219,6 +1333,27 @@ export default function MetasAjustesPage() {
                       </span>
                       <span className="tabular-nums">{fmtBRL(dropOpen.sinal_similares)}</span>
                     </div>
+                    {/* Aviso: quando receita Y-1 real (BQ) é ~0 mas sinal_ano_passado >> 0,
+                        o motor caiu para a mediana do grupo. Justificativa "Histórico próprio" pode confundir. */}
+                    {(() => {
+                      const liveRow = liveByKey.get(liveKey(dropOpen.idpropriedade, dropOpen.mes_ano))
+                      const realYp = Number(liveRow?.receita_ano_passado ?? NaN)
+                      const sinalYp = Number(dropOpen.sinal_ano_passado ?? NaN)
+                      if (!Number.isFinite(realYp) || !Number.isFinite(sinalYp)) return null
+                      if (sinalYp <= 0) return null
+                      // Considera "próprio = 0" quando realizado real Y-1 é < 5% do sinal.
+                      const proprioZerado = realYp <= Math.max(50, sinalYp * 0.05)
+                      if (!proprioZerado) return null
+                      return (
+                        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950 dark:border-amber-900 px-3 py-2 text-amber-900 dark:text-amber-200 text-xs">
+                          ⚠️ A unidade ficou zerada em {(() => {
+                            const [mm, yyyy] = dropOpen.mes_ano.split("/")
+                            return `${mm}/${Number(yyyy) - 1}`
+                          })()} (receita real ≈ {fmtBRL(realYp)}). O valor de "histórico ano passado"
+                          acima ({fmtBRL(sinalYp)}) é a mediana do grupo, não a receita própria.
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
 
