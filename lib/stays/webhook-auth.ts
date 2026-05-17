@@ -1,34 +1,50 @@
 /**
- * Verifica Basic auth dos webhooks recebidos da Stays.
+ * Verifica autenticidade dos webhooks recebidos da Stays.
  *
- * Stays envia o cabeçalho `Authorization: Basic base64(client_id:client_secret)`
- * usando o MESMO par configurado em App Center > Stays API.
+ * Descoberto empiricamente (2026-05-17): Stays NÃO usa Basic auth nos
+ * webhooks. Envia 3 headers identificadores:
+ *   - x-stays-api-hook: "1"
+ *   - x-stays-name: "{tenant}"           (no nosso caso "beto")
+ *   - x-stays-signature: "..."           (RSA SHA256 base64, ~700 chars)
  *
- * Em produção, exige a env. Em dev (NODE_ENV !== "production"), passa para
- * facilitar testes locais — mesma estratégia do onboarding/webhook.
+ * Validação atual: confere os 2 primeiros headers + tenant esperado.
+ * Pega spam óbvio mas é falsificável por quem conhecer o esquema.
+ *
+ * TODO: subir para validação criptográfica da x-stays-signature quando
+ * tivermos a chave pública da Stays (provavelmente em /external/v1/docs/
+ * ou via suporte). Aí esse helper fica defense-in-depth.
  */
 
 import type { NextRequest } from "next/server"
 
-function timingSafeEqual(a: string, b: string): boolean {
-    if (a.length !== b.length) return false
-    let result = 0
-    for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i)
-    return result === 0
+const EXPECTED_TENANT = "beto"
+
+export interface StaysWebhookValidation {
+    isStays: boolean
+    tenant: string | null
+    hasSignature: boolean
+    reason?: string
 }
 
-export function verifyStaysWebhookAuth(req: NextRequest): boolean {
-    const clientId = process.env.STAYS_CLIENT_ID
-    const clientSecret = process.env.STAYS_CLIENT_SECRET
+export function validateStaysWebhook(req: NextRequest): StaysWebhookValidation {
+    const hookFlag = req.headers.get("x-stays-api-hook")
+    const tenant = req.headers.get("x-stays-name")
+    const signature = req.headers.get("x-stays-signature")
 
-    if (!clientId || !clientSecret) {
-        return process.env.NODE_ENV !== "production"
+    if (hookFlag !== "1") {
+        return { isStays: false, tenant, hasSignature: !!signature, reason: "x-stays-api-hook ausente" }
     }
+    if (!tenant || tenant !== EXPECTED_TENANT) {
+        return { isStays: false, tenant, hasSignature: !!signature, reason: `tenant inesperado: ${tenant}` }
+    }
+    if (!signature) {
+        return { isStays: false, tenant, hasSignature: false, reason: "x-stays-signature ausente" }
+    }
+    return { isStays: true, tenant, hasSignature: true }
+}
 
-    const header = req.headers.get("authorization") || ""
-    if (!header.toLowerCase().startsWith("basic ")) return false
-
-    const expected = Buffer.from(`${clientId}:${clientSecret}`).toString("base64")
-    const received = header.slice(6).trim()
-    return timingSafeEqual(expected, received)
+/** Compatibilidade — retorna apenas o boolean. Em dev passa sempre. */
+export function verifyStaysWebhookAuth(req: NextRequest): boolean {
+    if (process.env.NODE_ENV !== "production") return true
+    return validateStaysWebhook(req).isStays
 }

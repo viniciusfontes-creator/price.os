@@ -18,18 +18,10 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseAdmin } from "@/lib/supabase-server"
-import { verifyStaysWebhookAuth } from "@/lib/stays/webhook-auth"
+import { validateStaysWebhook } from "@/lib/stays/webhook-auth"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
-
-/**
- * Fase de descoberta: estamos aprendendo qual esquema de auth a Stays usa
- * de fato nos webhooks. A doc não documenta — pode ser Basic, HMAC, ou nada.
- * Receber tudo, gravar metadata de auth no JSONB de headers, e diagnosticar
- * a partir dos payloads reais. Sem side-effect além de gravar no banco.
- */
-const WEBHOOK_OPEN_MODE = true
 
 function inferEventType(payload: unknown): string | null {
     if (!payload || typeof payload !== "object") return null
@@ -49,9 +41,12 @@ function inferEntityId(payload: unknown): string | null {
 }
 
 export async function POST(req: NextRequest) {
-    const authOk = verifyStaysWebhookAuth(req)
-    if (!authOk && !WEBHOOK_OPEN_MODE) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const validation = validateStaysWebhook(req)
+    if (process.env.NODE_ENV === "production" && !validation.isStays) {
+        return NextResponse.json(
+            { error: "Unauthorized", reason: validation.reason },
+            { status: 401 },
+        )
     }
 
     let payload: unknown
@@ -69,14 +64,12 @@ export async function POST(req: NextRequest) {
     const eventType = inferEventType(payload)
     const entityId = inferEntityId(payload)
 
-    // Captura todos os headers pra descobrir o esquema de auth que a Stays usa.
-    // Sanitizamos o Authorization para não persistir o secret cru.
-    const allHeaders: Record<string, string> = {}
+    // Persistimos apenas os headers `x-stays-*` (úteis pra debug) e o signature
+    // marcado, sem dados sensíveis de infra (oidc tokens, vercel internals, etc).
+    const staysHeaders: Record<string, string> = {}
     req.headers.forEach((value, key) => {
-        if (key.toLowerCase() === "authorization") {
-            allHeaders[key] = value.split(" ")[0] + " <redacted>"
-        } else {
-            allHeaders[key] = value
+        if (key.toLowerCase().startsWith("x-stays-")) {
+            staysHeaders[key] = key === "x-stays-signature" ? `<${value.length}b>` : value
         }
     })
 
@@ -87,8 +80,9 @@ export async function POST(req: NextRequest) {
             entity_id: entityId,
             payload,
             headers: {
-                _auth_ok: authOk,
-                _all: allHeaders,
+                tenant: validation.tenant,
+                stays: staysHeaders,
+                source_ip: req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for"),
             },
         })
         .select("id, received_at")
@@ -108,13 +102,14 @@ export async function POST(req: NextRequest) {
     )
 }
 
-/** GET para verificação manual do endpoint (ex.: botão "Testar" na Stays). */
+/** GET para verificação manual do endpoint. */
 export async function GET(req: NextRequest) {
-    const authed = verifyStaysWebhookAuth(req)
+    const v = validateStaysWebhook(req)
     return NextResponse.json({
         ok: true,
         endpoint: "stays-webhook",
-        authenticated: authed,
+        is_stays_request: v.isStays,
+        tenant: v.tenant,
         timestamp: new Date().toISOString(),
     })
 }
