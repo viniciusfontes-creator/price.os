@@ -15,6 +15,7 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseAdmin } from "@/lib/supabase-server"
+import { requireAdminSession } from "@/lib/stays/admin-auth"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -31,6 +32,9 @@ interface WebhookEventRow {
 }
 
 export async function GET(req: NextRequest) {
+    const auth = await requireAdminSession()
+    if (!auth.ok) return auth.response
+
     const supabase = getSupabaseAdmin()
     if (!supabase) {
         return NextResponse.json({ error: "Database unavailable" }, { status: 503 })
