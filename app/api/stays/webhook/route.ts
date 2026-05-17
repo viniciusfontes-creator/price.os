@@ -23,6 +23,14 @@ import { verifyStaysWebhookAuth } from "@/lib/stays/webhook-auth"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+/**
+ * Fase de descoberta: estamos aprendendo qual esquema de auth a Stays usa
+ * de fato nos webhooks. A doc não documenta — pode ser Basic, HMAC, ou nada.
+ * Receber tudo, gravar metadata de auth no JSONB de headers, e diagnosticar
+ * a partir dos payloads reais. Sem side-effect além de gravar no banco.
+ */
+const WEBHOOK_OPEN_MODE = true
+
 function inferEventType(payload: unknown): string | null {
     if (!payload || typeof payload !== "object") return null
     const p = payload as Record<string, unknown>
@@ -41,7 +49,8 @@ function inferEntityId(payload: unknown): string | null {
 }
 
 export async function POST(req: NextRequest) {
-    if (!verifyStaysWebhookAuth(req)) {
+    const authOk = verifyStaysWebhookAuth(req)
+    if (!authOk && !WEBHOOK_OPEN_MODE) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
@@ -60,6 +69,17 @@ export async function POST(req: NextRequest) {
     const eventType = inferEventType(payload)
     const entityId = inferEntityId(payload)
 
+    // Captura todos os headers pra descobrir o esquema de auth que a Stays usa.
+    // Sanitizamos o Authorization para não persistir o secret cru.
+    const allHeaders: Record<string, string> = {}
+    req.headers.forEach((value, key) => {
+        if (key.toLowerCase() === "authorization") {
+            allHeaders[key] = value.split(" ")[0] + " <redacted>"
+        } else {
+            allHeaders[key] = value
+        }
+    })
+
     const { data: inserted, error } = await supabase
         .from("stays_webhook_events")
         .insert({
@@ -67,8 +87,8 @@ export async function POST(req: NextRequest) {
             entity_id: entityId,
             payload,
             headers: {
-                "user-agent": req.headers.get("user-agent"),
-                "content-type": req.headers.get("content-type"),
+                _auth_ok: authOk,
+                _all: allHeaders,
             },
         })
         .select("id, received_at")
