@@ -7,6 +7,7 @@
 
 import { promises as fs } from "fs"
 import path from "path"
+import { Readable } from "stream"
 import { isDryRun } from "./constants"
 
 export interface DriveUploadResult {
@@ -48,7 +49,6 @@ export async function uploadToDrive(input: UploadInput): Promise<DriveUploadResu
     })
 
     const drive = google.drive({ version: "v3", auth })
-    const { Readable } = await import("stream")
 
     const res = await drive.files.create({
         requestBody: {
