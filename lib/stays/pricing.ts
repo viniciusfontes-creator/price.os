@@ -1,0 +1,193 @@
+/**
+ * Helpers tipados para os endpoints /external/v1/parr/ da Stays.
+ *
+ * Modelo conceitual (verificado empiricamente em 2026-05-18 com tenant
+ * beto.stays.com.br):
+ *
+ *   PRICE-REGION = "Regras de preço" no PMS (catálogo).
+ *   Define a estrutura de PERÍODOS, EVENTOS, DOW e ladder multi-LOS.
+ *   Existem hoje 16 regions ativas. Geridas só na UI Stays.
+ *
+ *   SEASON = instância materializada para 1 listing × 1 período da region.
+ *   Tem _idseason único. Carrega baseRateValue + ratePlans (multi-LOS).
+ *
+ *   PRICEMASTER = padrão "pai/filho" da Stays. Várias unidades-filhas podem
+ *   compartilhar o mesmo _id da listing-mãe (Pricemaster_ID no warehouse BQ).
+ *   PATCH no _id-mãe propaga para todas as filhas automaticamente.
+ */
+
+import { staysFetch, StaysApiError } from "./client"
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface PriceRegion {
+    _id: string
+    name: string
+}
+
+export interface RatePlan {
+    minStay: number
+    _i_percent: number
+    _f_val?: number
+}
+
+export interface MonthlyRate {
+    minStay: number
+    _f_val: number
+}
+
+export interface ListingSeason {
+    _idlisting: string
+    _idseason: string
+    type: "global" | "individual"
+    status: "active" | "inactive"
+    from: string // YYYY-MM-DD
+    to: string // YYYY-MM-DD
+    baseRateValue: number
+    ratePlans: RatePlan[]
+    monthlyRate?: MonthlyRate
+}
+
+export interface SeasonPatch {
+    type: "global" | "individual"
+    baseRateValue: number
+    monthlyRateValue?: number
+    /** Apenas em type='individual': override de % por minStay. */
+    ratePlans?: Array<{ minStay: number; _i_percent: number }>
+}
+
+// ============================================================================
+// Region (GET / POST)
+// ============================================================================
+
+/** GET /parr/price-regions — lista regions ativas no PMS. */
+export async function listPriceRegions(): Promise<PriceRegion[]> {
+    const data = await staysFetch<PriceRegion[]>("/external/v1/parr/price-regions")
+    return data
+}
+
+/** POST /parr/price-regions — cria nova region. Em geral usada na UI Stays. */
+export async function createPriceRegion(name: string): Promise<PriceRegion> {
+    return staysFetch<PriceRegion>("/external/v1/parr/price-regions", {
+        method: "POST",
+        body: { name },
+    })
+}
+
+// ============================================================================
+// Seasons da listing (GET / PATCH)
+// ============================================================================
+
+/**
+ * GET /parr/listing-rates-sell — lista todas seasons da listing no range.
+ * Requer from/to em ISO YYYY-MM-DD. Retorna ordenado por from asc.
+ *
+ * Cobre 365 dias = quantidade típica de 25-35 seasons (varia por region).
+ */
+export async function listListingSeasons(params: {
+    listingId: string
+    from: string
+    to: string
+}): Promise<ListingSeason[]> {
+    return staysFetch<ListingSeason[]>(
+        `/external/v1/parr/listing-rates-sell?listingId=${encodeURIComponent(params.listingId)}&from=${params.from}&to=${params.to}`,
+    )
+}
+
+/** GET /parr/listing-rates-sell/{seasonId} — detalhe de uma season. */
+export async function getListingSeason(params: {
+    listingId: string
+    seasonId: string
+}): Promise<ListingSeason> {
+    return staysFetch<ListingSeason>(
+        `/external/v1/parr/listing-rates-sell/${encodeURIComponent(params.seasonId)}?listingId=${encodeURIComponent(params.listingId)}`,
+    )
+}
+
+/**
+ * PATCH /parr/listing-rates-sell/{seasonId} — atualiza preço de uma season.
+ *
+ * Modo "global" (recomendado): só envia baseRateValue, ladder vem da region.
+ * Modo "individual": redefine ratePlans com _i_percent próprios.
+ *
+ * Algumas seasons (Mensalista) exigem monthlyRateValue — se não enviado,
+ * a Stays retorna 400 "Monthly rate is required". Quem chama deve tratar.
+ */
+export async function patchListingSeason(params: {
+    listingId: string
+    seasonId: string
+    body: SeasonPatch
+}): Promise<ListingSeason> {
+    return staysFetch<ListingSeason>(
+        `/external/v1/parr/listing-rates-sell/${encodeURIComponent(params.seasonId)}?listingId=${encodeURIComponent(params.listingId)}`,
+        { method: "PATCH", body: params.body },
+    )
+}
+
+// ============================================================================
+// Helpers de alto nível
+// ============================================================================
+
+/** Pega 365 dias de seasons a partir de hoje. */
+export async function snapshotSeasonsForYear(listingId: string): Promise<ListingSeason[]> {
+    const today = new Date()
+    const from = today.toISOString().slice(0, 10)
+    const to = new Date(today.getTime() + 365 * 86400000).toISOString().slice(0, 10)
+    return listListingSeasons({ listingId, from, to })
+}
+
+/**
+ * Aplica um lote de baseRateValue. Itera, captura erros 400 Monthly rate
+ * e marca pra retry. Não tenta retry automaticamente — devolve a lista
+ * de pendentes pra UI lidar.
+ */
+export interface ApplyResult {
+    successes: Array<{ seasonId: string; baseRate: number }>
+    failures: Array<{ seasonId: string; status: number; message: string; needsMonthlyRate: boolean }>
+}
+
+export async function applySeasonPrices(params: {
+    listingId: string
+    updates: Array<{ seasonId: string; baseRate: number; monthlyRate?: number }>
+    dryRun?: boolean
+}): Promise<ApplyResult> {
+    const result: ApplyResult = { successes: [], failures: [] }
+
+    for (const u of params.updates) {
+        if (params.dryRun) {
+            // Simula: registra como sucesso mas não chama API.
+            result.successes.push({ seasonId: u.seasonId, baseRate: u.baseRate })
+            continue
+        }
+        try {
+            const body: SeasonPatch = { type: "global", baseRateValue: u.baseRate }
+            if (u.monthlyRate != null) body.monthlyRateValue = u.monthlyRate
+            await patchListingSeason({
+                listingId: params.listingId,
+                seasonId: u.seasonId,
+                body,
+            })
+            result.successes.push({ seasonId: u.seasonId, baseRate: u.baseRate })
+        } catch (e) {
+            if (e instanceof StaysApiError) {
+                const msg = typeof e.body === "object" ? JSON.stringify(e.body) : String(e.body)
+                result.failures.push({
+                    seasonId: u.seasonId,
+                    status: e.status,
+                    message: msg,
+                    needsMonthlyRate: e.status === 400 && /monthly\s*rate/i.test(msg),
+                })
+            } else {
+                result.failures.push({
+                    seasonId: u.seasonId,
+                    status: 0,
+                    message: (e as Error).message,
+                    needsMonthlyRate: false,
+                })
+            }
+        }
+    }
+    return result
+}

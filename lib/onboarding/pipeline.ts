@@ -26,9 +26,13 @@ import { generatePricingPdf } from "./steps/07-generate-pricing-pdf"
 import { fetchOwnerContact } from "./steps/10-fetch-owner-contact"
 import { generatePitchdeck } from "./steps/12-generate-pitchdeck"
 import { suggestBasket } from "./steps/14-suggest-basket"
-import { suggestBaserate } from "./steps/15-suggest-baserate"
+import { suggestBaserate, suggestSeasonBaserates } from "./steps/15-suggest-baserate"
 import { suggestSazonalidades } from "./steps/16-suggest-sazonalidades"
 import { matchAirbnb } from "./steps/17-match-airbnb"
+import { staysResolveId } from "./steps/01b-stays-resolve-id"
+import { staysSnapshotSeasons } from "./steps/01c-stays-snapshot-seasons"
+import { staysSuggestRegion } from "./steps/01d-stays-suggest-region"
+import type { ListingSeason } from "@/lib/stays/pricing"
 import type { JestorPayload, OnboardingState, PipelineContext } from "./types"
 
 export interface RunResult {
@@ -96,6 +100,52 @@ export async function runEnrichment(
             enriched_at: new Date().toISOString(),
         })
 
+        // ---- F2.5 Stays integration: resolve _id, snapshot seasons, sugere region ----
+        let staysSeasons: ListingSeason[] = []
+        try {
+            const resolveResult = await staysResolveId(ctx)
+            await logEvent(onboardingId, idpropriedade, "stays_id_resolved", {
+                stays_listing_id: resolveResult.stays_listing_id,
+                is_mirror: resolveResult.is_mirror,
+                mirror_of_name: resolveResult.mirror_of_name,
+            })
+            if (resolveResult.stays_listing_id) {
+                await updateOnboarding(onboardingId, {
+                    stays_listing_id: resolveResult.stays_listing_id,
+                } as Record<string, unknown>)
+
+                const snapshot = await staysSnapshotSeasons(resolveResult.stays_listing_id)
+                staysSeasons = snapshot.seasons
+                await logEvent(onboardingId, idpropriedade, "stays_seasons_snapshot", {
+                    count: staysSeasons.length,
+                    error: snapshot.error,
+                })
+                if (staysSeasons.length > 0) {
+                    await updateOnboarding(onboardingId, {
+                        stays_snapshot_seasons: { items: staysSeasons } as Record<string, unknown>,
+                    } as Record<string, unknown>)
+                }
+            }
+
+            const regionResult = await staysSuggestRegion(ctx)
+            await logEvent(onboardingId, idpropriedade, "stays_region_suggested", {
+                region_id: regionResult.region_id,
+                region_name: regionResult.region_name,
+                confidence: regionResult.confidence,
+            })
+            if (regionResult.region_id) {
+                await updateOnboarding(onboardingId, {
+                    stays_region_id: regionResult.region_id,
+                    stays_region_name: regionResult.region_name,
+                } as Record<string, unknown>)
+            }
+        } catch (err) {
+            // Falha em Stays não bloqueia o pipeline — operador resolve manualmente.
+            await logEvent(onboardingId, idpropriedade, "stays_integration_failed", {
+                error: err instanceof Error ? err.message : String(err),
+            })
+        }
+
         // ---- F3 artefato Estudo (sem Jestor/Slack — fica pra Concluir) ----
         try {
             const pdfResult = await generatePricingPdf(ctx)
@@ -153,13 +203,17 @@ export async function runEnrichment(
             })
         }
 
-        // ---- F6 sugestões (basket, baserate, sazonalidades, Airbnb) ----
-        const [basketRes, baserateRes, sazonalRes, airbnbRes] = await Promise.allSettled([
-            suggestBasket(ctx),
-            suggestBaserate(ctx),
-            suggestSazonalidades(ctx),
-            matchAirbnb(ctx),
-        ])
+        // ---- F6 sugestões (basket, baserate, sazonalidades, Airbnb, seasons) ----
+        const [basketRes, baserateRes, sazonalRes, airbnbRes, seasonBaseratesRes] =
+            await Promise.allSettled([
+                suggestBasket(ctx),
+                suggestBaserate(ctx),
+                suggestSazonalidades(ctx),
+                matchAirbnb(ctx),
+                staysSeasons.length > 0
+                    ? suggestSeasonBaserates(ctx, staysSeasons)
+                    : Promise.resolve([]),
+            ])
 
         const suggestionsPatch: Record<string, unknown> = {}
         if (basketRes.status === "fulfilled" && basketRes.value) {
@@ -174,6 +228,25 @@ export async function runEnrichment(
         if (airbnbRes.status === "fulfilled" && airbnbRes.value?.url_anuncio) {
             suggestionsPatch.matched_airbnb_listing = airbnbRes.value.url_anuncio
         }
+        // Pré-popula pricing_config com sugestões da IA por season (operador edita na UI).
+        if (
+            seasonBaseratesRes.status === "fulfilled" &&
+            seasonBaseratesRes.value.length > 0
+        ) {
+            suggestionsPatch.pricing_config = {
+                mode: "manual",
+                seasons: seasonBaseratesRes.value.map((s) => ({
+                    _idseason: s._idseason,
+                    from: s.seasonFrom,
+                    to: s.seasonTo,
+                    current_base_rate: s.currentBaseRate,
+                    suggested_base_rate: s.suggestedBaseRate,
+                    approved_base_rate: null,
+                    reason: s.reason,
+                    needs_monthly_rate: s.needsMonthlyRate,
+                })),
+            }
+        }
         if (Object.keys(suggestionsPatch).length) {
             await updateOnboarding(onboardingId, suggestionsPatch)
         }
@@ -182,6 +255,7 @@ export async function runEnrichment(
             baserate: baserateRes.status === "fulfilled" ? baserateRes.value : null,
             sazonalidade: sazonalRes.status === "fulfilled" ? sazonalRes.value?.seasonality_name : null,
             airbnb_match: airbnbRes.status === "fulfilled" ? !!airbnbRes.value : false,
+            seasons_pricing: seasonBaseratesRes.status === "fulfilled" ? seasonBaseratesRes.value.length : 0,
         })
 
         // Pipeline terminou. Card vai pra Revisão (operador analisa).

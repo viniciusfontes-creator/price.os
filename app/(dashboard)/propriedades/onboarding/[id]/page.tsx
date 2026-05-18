@@ -21,7 +21,9 @@ import {
     Check,
     Pencil,
     Info,
+    DollarSign,
 } from "lucide-react"
+import { PricingTab } from "@/components/onboarding/pricing-tab"
 
 // ============================================
 // Tipos
@@ -143,6 +145,7 @@ const STATE_DOT: Record<string, string> = {
 const TABS = [
     { key: "dados", label: "Dados", Icon: User },
     { key: "analise", label: "Análise", Icon: Sparkles },
+    { key: "pricing", label: "Pricing", Icon: DollarSign },
     { key: "estudo", label: "Estudo", Icon: FileText },
     { key: "pitchdeck", label: "Pitchdeck", Icon: Send },
     { key: "sugestoes", label: "Sugestões", Icon: Sparkles },
@@ -376,6 +379,7 @@ export default function OnboardingDetailPage() {
 
                 {activeTab === "dados" && <DadosTab data={data} onPatch={patchAndReload} />}
                 {activeTab === "analise" && <AnaliseTab data={data} onPatch={patchAndReload} />}
+                {activeTab === "pricing" && <PricingTab onboardingId={id} />}
                 {activeTab === "estudo" && <PdfPreview src={`/api/onboarding/${id}/pricing-pdf`} title="Estudo de Rentabilidade" driveUrl={data.pdf_url} />}
                 {activeTab === "pitchdeck" && <PdfPreview src={`/api/onboarding/${id}/pitchdeck-pdf`} title="Pitchdeck Qavi.imob" driveUrl={data.pitchdeck_pdf_url} />}
                 {activeTab === "sugestoes" && <SugestoesTab data={data} onReload={load} />}
