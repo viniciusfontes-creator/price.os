@@ -32,6 +32,7 @@ import { matchAirbnb } from "./steps/17-match-airbnb"
 import { staysResolveId } from "./steps/01b-stays-resolve-id"
 import { staysSnapshotSeasons } from "./steps/01c-stays-snapshot-seasons"
 import { staysSuggestRegion } from "./steps/01d-stays-suggest-region"
+import { staysDetectMirror } from "./steps/01e-stays-clone-group"
 import type { ListingSeason } from "@/lib/stays/pricing"
 import type { JestorPayload, OnboardingState, PipelineContext } from "./types"
 
@@ -125,6 +126,22 @@ export async function runEnrichment(
                         stays_snapshot_seasons: { items: staysSeasons } as Record<string, unknown>,
                     } as Record<string, unknown>)
                 }
+
+                // Mirror detection: descobre se unidade é master/follower/standalone
+                const mirror = await staysDetectMirror(resolveResult.stays_listing_id, resolveResult)
+                await logEvent(onboardingId, idpropriedade, "stays_mirror_detected", {
+                    role: mirror.role,
+                    group_type: mirror.group_type,
+                    children_count: mirror.children?.length || 0,
+                    master_listing_id: mirror.master_listing_id,
+                })
+                // Persistido em stays_snapshot_seasons (já é jsonb) como sub-campo
+                await updateOnboarding(onboardingId, {
+                    stays_snapshot_seasons: {
+                        items: staysSeasons,
+                        mirror,
+                    } as Record<string, unknown>,
+                } as Record<string, unknown>)
             }
 
             const regionResult = await staysSuggestRegion(ctx)

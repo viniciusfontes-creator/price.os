@@ -127,6 +127,72 @@ export async function patchListingSeason(params: {
 }
 
 // ============================================================================
+// Clone-groups (espelhamento de unidades)
+// ============================================================================
+
+/**
+ * Clone-groups são "grupos espelho" da Stays — uma listing-mestre tem N
+ * listings-filhas que herdam conteúdo + preço. Equivalente operacional do
+ * Pricemaster_ID do BQ.
+ *
+ * NOTA: GET retorna 400 com mensagem específica quando o id passado NÃO é
+ * master de nenhum grupo. Usamos isso pra detectar status:
+ *   - 200 OK → essa listing É master, retorna items[]
+ *   - 400 "is not master" → essa listing é stand-alone OU é filha de outra
+ *
+ * Pra resolver "filha", precisamos do master via outro caminho (BQ
+ * Pricemaster_ID). O endpoint não oferece "qual o master desta filha".
+ */
+
+export interface CloneGroup {
+    masterId: string
+    name: string
+    visibleItems: number
+    totalItems: number
+    items: Array<{
+        internalName: string
+        status: string
+        _idlisting: string
+        visible: boolean
+    }>
+}
+
+/**
+ * Tenta buscar o clone-group cujo master é o listingId fornecido.
+ * Se a listing não for master, retorna null (não dispara exceção).
+ */
+export async function getCloneGroupAsMaster(listingId: string): Promise<CloneGroup | null> {
+    try {
+        return await staysFetch<CloneGroup>(
+            `/external/v1/content/clone-groups/${encodeURIComponent(listingId)}`,
+        )
+    } catch (e) {
+        if (e instanceof StaysApiError && e.status === 400) {
+            const body = typeof e.body === "object" ? JSON.stringify(e.body) : String(e.body)
+            if (/not master of clone group/i.test(body)) return null
+        }
+        throw e
+    }
+}
+
+/**
+ * Análogo a getCloneGroupAsMaster mas para price-groups (espelhamento só de preço).
+ */
+export async function getPriceGroupAsMaster(listingId: string): Promise<CloneGroup | null> {
+    try {
+        return await staysFetch<CloneGroup>(
+            `/external/v1/content/price-groups/${encodeURIComponent(listingId)}`,
+        )
+    } catch (e) {
+        if (e instanceof StaysApiError && e.status === 400) {
+            const body = typeof e.body === "object" ? JSON.stringify(e.body) : String(e.body)
+            if (/not master of price group/i.test(body)) return null
+        }
+        throw e
+    }
+}
+
+// ============================================================================
 // Helpers de alto nível
 // ============================================================================
 

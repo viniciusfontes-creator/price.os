@@ -44,15 +44,18 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const row = await getOnboarding(params.id)
     if (!row) return NextResponse.json({ error: "Não encontrado" }, { status: 404 })
 
+    const snapshot = (row as unknown as Record<string, unknown>).stays_snapshot_seasons as
+        | { items?: unknown[]; mirror?: unknown }
+        | null
+
     return NextResponse.json({
         idpropriedade: row.idpropriedade,
         state: row.state,
         stays_listing_id: (row as unknown as Record<string, unknown>).stays_listing_id ?? null,
         stays_region_id: (row as unknown as Record<string, unknown>).stays_region_id ?? null,
         stays_region_name: (row as unknown as Record<string, unknown>).stays_region_name ?? null,
-        snapshot_seasons:
-            ((row as unknown as Record<string, unknown>).stays_snapshot_seasons as { items?: unknown[] } | null)
-                ?.items ?? [],
+        snapshot_seasons: snapshot?.items ?? [],
+        mirror: snapshot?.mirror ?? null,
         pricing_config: (row as unknown as Record<string, unknown>).pricing_config ?? null,
         sync: {
             status: (row as unknown as Record<string, unknown>).stays_sync_status ?? "pending",

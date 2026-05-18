@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table"
 import {
     AlertCircle, CheckCircle2, Loader2, MapPin, Sparkles, Zap, Info,
+    Copy, Layers, ArrowDownRight, Users,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -43,6 +44,14 @@ interface ConfigSeason {
     needs_monthly_rate?: boolean
 }
 
+interface MirrorInfo {
+    role: "standalone" | "master" | "follower"
+    children?: Array<{ idlisting: string; internalName: string; visible: boolean }>
+    master_listing_id?: string
+    master_name?: string
+    group_type?: "clone" | "price"
+}
+
 interface PricingData {
     idpropriedade: string
     state: string
@@ -50,6 +59,7 @@ interface PricingData {
     stays_region_id: string | null
     stays_region_name: string | null
     snapshot_seasons: SnapshotSeason[]
+    mirror: MirrorInfo | null
     pricing_config: {
         mode: "manual" | "mirror" | "keep_current"
         mirror_source_idpropriedade?: string | null
@@ -222,6 +232,11 @@ export function PricingTab({ onboardingId }: Props) {
                 </CardContent>
             </Card>
 
+            {/* Card Espelhamento */}
+            {loaded.mirror && (
+                <MirrorCard mirror={loaded.mirror} listingId={loaded.stays_listing_id} />
+            )}
+
             {!hasStaysData && (
                 <Card className="bg-amber-50 dark:bg-amber-950/30 border-amber-200">
                     <CardContent className="py-4 flex items-center gap-3">
@@ -358,6 +373,89 @@ function SeasonRow({
                 {season.reason ?? "—"}
             </TableCell>
         </TableRow>
+    )
+}
+
+function MirrorCard({ mirror, listingId }: { mirror: MirrorInfo; listingId: string | null }) {
+    if (mirror.role === "standalone") {
+        return (
+            <Card>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <Layers className="h-4 w-4 text-muted-foreground" />
+                        Espelhamento
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                    <span className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        Unidade autônoma — não compartilha preço com nenhuma outra.
+                    </span>
+                </CardContent>
+            </Card>
+        )
+    }
+
+    if (mirror.role === "follower") {
+        return (
+            <Card className="bg-blue-50 dark:bg-blue-950/30 border-blue-200">
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <ArrowDownRight className="h-4 w-4 text-blue-600" />
+                        Esta unidade espelha outra
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                    <p>
+                        Preço é definido pela unidade-mãe:{" "}
+                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                            {mirror.master_name ?? mirror.master_listing_id}
+                        </code>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                        Alterações feitas aqui não terão efeito direto — mude o preço da unidade-mãe
+                        para refletir aqui automaticamente.
+                    </p>
+                </CardContent>
+            </Card>
+        )
+    }
+
+    // master
+    return (
+        <Card>
+            <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                        Esta é uma unidade-mãe
+                    </CardTitle>
+                    <Badge variant="secondary" className="text-xs">
+                        {mirror.group_type === "clone" ? "Clone Group" : "Price Group"}
+                    </Badge>
+                </div>
+            </CardHeader>
+            <CardContent>
+                <p className="text-sm text-muted-foreground mb-3">
+                    {mirror.children?.length ?? 0} unidades filhas seguem o preço desta unidade:
+                </p>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {(mirror.children ?? []).map((c) => (
+                        <div
+                            key={c.idlisting}
+                            className="flex items-center justify-between text-xs px-3 py-2 bg-muted/40 rounded"
+                        >
+                            <span className="font-mono truncate flex-1">{c.internalName}</span>
+                            <code className="text-[10px] text-muted-foreground ml-2">{c.idlisting.slice(0, 8)}</code>
+                        </div>
+                    ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-3 flex items-start gap-1.5">
+                    <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                    Ao editar preços abaixo, as {mirror.children?.length ?? 0} filhas refletem automaticamente.
+                </p>
+            </CardContent>
+        </Card>
     )
 }
 
