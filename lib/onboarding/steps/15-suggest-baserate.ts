@@ -53,7 +53,21 @@ export async function suggestBaserate(ctx: PipelineContext): Promise<number | nu
 }
 
 // ---------------------------------------------------------------------------
-// v2 — sugestão por season
+// v2 — sugestão por season (usa metaDistribuicao do step 05)
+// ---------------------------------------------------------------------------
+//
+// Estratégia: a aba "Análise" já calcula a diária ideal por mês a partir da
+// meta anual + distribuição por feriado. Reaproveitamos esses números como
+// SUGESTÃO no card Pricing — em vez de "manter valor atual" (que não agrega).
+//
+// Para cada season da Stays:
+//   1. Identifica o mês (start_date)
+//   2. Se a season é curta (≤7 dias) e o mês tem feriado configurado →
+//      usa `feriado.diaria_media_feriado`
+//   3. Caso contrário → usa `meta_diaria_media` (diária do mês inteiro)
+//   4. Compara com baseRateValue atual da Stays e monta reason explicativo
+//
+// Fallback (sem metaDistribuicao): mediana do sub_grupo (lógica v1).
 // ---------------------------------------------------------------------------
 
 export interface SeasonSuggestion {
@@ -66,28 +80,28 @@ export interface SeasonSuggestion {
     needsMonthlyRate: boolean
 }
 
-const EVENT_MULTIPLIERS: Array<{ regex: RegExp; mult: number; label: string }> = [
-    { regex: /r[eé]v[ée]ill?on|fim\s*de\s*ano|natal|ano\s*novo/i, mult: 1.6, label: "Réveillon/Fim de Ano" },
-    { regex: /carnaval/i, mult: 1.5, label: "Carnaval" },
-    { regex: /semana\s*santa|p[áa]scoa/i, mult: 1.3, label: "Semana Santa" },
-    { regex: /tiradentes|trabalh|corpus|consci[eê]nc|finados|aparecid|7\s*de\s*setembro|crianças/i, mult: 1.2, label: "Feriado prolongado" },
+const MES_PT = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ]
 
-interface SeasonNameLike {
-    name?: string // não vem na API; reservado para futuro
+function diffDays(from: string, to: string): number {
+    return Math.round(
+        (new Date(to + "T00:00:00Z").getTime() - new Date(from + "T00:00:00Z").getTime()) /
+            86400000,
+    )
 }
 
-function detectEventBoost(season: ListingSeason & SeasonNameLike): { mult: number; label: string } | null {
-    // Heurística por data quando o nome não vem.
-    // Reveillon: 25 dez → 02 jan
-    // Carnaval: depende do ano (de 40 a 50 dias antes da Páscoa).
-    const from = new Date(season.from + "T00:00:00Z")
-    const md = `${String(from.getUTCMonth() + 1).padStart(2, "0")}-${String(from.getUTCDate()).padStart(2, "0")}`
-    if (md >= "12-23" || md <= "01-05") return { mult: 1.6, label: "Réveillon/Fim de Ano (heurística por data)" }
-    // Tem como detectar carnaval via cálculo de Páscoa, mas no escopo
-    // inicial fica como TODO. A heurística por preço atual (acima do
-    // baseline mediano) já captura.
-    return null
+function fmtBRL(v: number): string {
+    return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function describeDelta(current: number | null, suggested: number): string {
+    if (current == null) return ""
+    const delta = ((suggested - current) / current) * 100
+    if (Math.abs(delta) < 1) return " (alinhado com atual)"
+    const sign = delta > 0 ? "+" : ""
+    return ` (atual ${fmtBRL(current)}, ${sign}${delta.toFixed(0)}%)`
 }
 
 export async function suggestSeasonBaserates(
@@ -96,9 +110,12 @@ export async function suggestSeasonBaserates(
 ): Promise<SeasonSuggestion[]> {
     if (snapshot.length === 0) return []
 
-    // Mediana do sub_grupo como baseline (se disponível).
+    const meta = ctx.metaDistribuicao || []
+    const metaByMonth = new Map(meta.map((m) => [m.mes, m]))
+
+    // Fallback: mediana do sub_grupo se metaDistribuicao estiver vazia.
     let mediana: number | null = null
-    if (ctx.bq?.sub_grupo) {
+    if (meta.length === 0 && ctx.bq?.sub_grupo) {
         const rows = await executeQuery<{ mediana: number | null }>(SQL_MEDIANA, {
             sub_grupo: ctx.bq.sub_grupo,
         })
@@ -107,25 +124,54 @@ export async function suggestSeasonBaserates(
     }
 
     return snapshot.map((s) => {
-        const event = detectEventBoost(s)
+        const fromDate = new Date(s.from + "T00:00:00Z")
+        const toDateInclusive = new Date(new Date(s.to + "T00:00:00Z").getTime() - 86400000)
+        const startMonth = MES_PT[fromDate.getUTCMonth()]
+        const endMonth = MES_PT[toDateInclusive.getUTCMonth()]
+        const days = diffDays(s.from, s.to)
+        // ≤10 cobre Réveillon (9d), Carnaval (7d), feriados longos (3-5d)
+        // Acima disso = pacote mensal ou bloco entre eventos
+        const isShort = days <= 10
 
-        // Estratégia: se já tem valor na Stays e não detectou evento, sugere manter.
-        // Se detectou evento, multiplica o atual (ou a mediana) pelo fator.
+        const startMeta = metaByMonth.get(startMonth)
+        const endMeta = metaByMonth.get(endMonth)
+
+        // Para season curta que cruza meses, preferir o mês com feriado configurado
+        // (caso típico: Réveillon começa em Dez mas o feriado está em Jan no Price.OS).
+        let chosenMeta = startMeta
+        let chosenMonth = startMonth
+        if (isShort && startMonth !== endMonth) {
+            if (endMeta?.feriado) {
+                chosenMeta = endMeta
+                chosenMonth = endMonth
+            } else if (startMeta?.feriado) {
+                chosenMeta = startMeta
+                chosenMonth = startMonth
+            }
+        }
+
         let suggested: number | null = null
         let reason: string
 
-        if (event) {
-            const base = s.baseRateValue || mediana
-            suggested = base ? Number((base * event.mult).toFixed(2)) : null
-            reason = `${event.label} — base × ${event.mult.toFixed(1)}`
+        if (chosenMeta) {
+            if (isShort && chosenMeta.feriado) {
+                suggested = Number(chosenMeta.feriado.diaria_media_feriado.toFixed(2))
+                reason = `${chosenMeta.feriado.nome} (meta: ${chosenMeta.feriado.noites_feriado} noites a ${fmtBRL(suggested)})${describeDelta(s.baseRateValue, suggested)}`
+            } else {
+                suggested = Number(chosenMeta.meta_diaria_media.toFixed(2))
+                reason = `Diária média de ${chosenMonth} (meta: ${fmtBRL(chosenMeta.meta_faturamento)} ÷ ${chosenMeta.meta_noites_2026} noites)${describeDelta(s.baseRateValue, suggested)}`
+            }
+        } else if (s.baseRateValue && mediana) {
+            suggested = mediana
+            reason = `Sem meta de ${mesNome} — fallback: mediana sub_grupo${describeDelta(s.baseRateValue, mediana)}`
         } else if (s.baseRateValue) {
             suggested = s.baseRateValue
-            reason = "Manter valor atual (sem evento detectado)"
+            reason = `Sem meta de ${mesNome} — manter valor atual`
         } else if (mediana) {
             suggested = mediana
-            reason = `Mediana sub_grupo (${ctx.bq?.sub_grupo})`
+            reason = `Sem meta nem valor atual — mediana sub_grupo`
         } else {
-            reason = "Sem dados para sugerir"
+            reason = `Sem meta de ${mesNome} nem fallback disponível`
         }
 
         return {
