@@ -423,5 +423,92 @@ export async function applyPromotion(params: {
     return { dryRun: false, result }
 }
 
+// ============================================================================
+// Price-mirror (espelhamento de preço, via JSON-RPC)
+// ============================================================================
+//
+// Modelo da Stays:
+//   Apartment com `_idMasterApartment` define que ele é FILHO (sem `_idMasterApartment` = stand-alone ou MASTER).
+//   `types._b_main = 1` indica que pode ser master (unidade principal).
+//   reltype="fill" copia o preço do master pro filho continuamente.
+
+export interface MasterCandidate {
+    _id: string
+    id: string // partnerCode curto
+    _idregion?: string
+    _idowner?: string
+    _idbuilding?: string
+    _adr?: { str?: string; num?: string; region?: string; city?: string }
+}
+
+/**
+ * Lista apartamentos elegíveis para serem MASTER de price-mirror:
+ *   - na mesma region
+ *   - não são eles mesmos
+ *   - active=yes, types._b_main=1
+ *   - sem _idMasterApartment (não são filhos de outro)
+ */
+export async function listMasterCandidates(params: {
+    regionId: string
+    excludeListingId: string
+}): Promise<MasterCandidate[]> {
+    const result = await staysJsonRpc<MasterCandidate[][]>(
+        "apartment.getSimpleApartments",
+        [
+            "",
+            {
+                _id: { $ne: params.excludeListingId },
+                "types._b_main": 1,
+                active: "yes",
+                _idMasterApartment: { $exists: 0 },
+                _idregion: params.regionId,
+            },
+            {
+                id: 1,
+                avatar: 1,
+                _adr: 1,
+                _idowner: 1,
+                _idbuilding: 1,
+                _idregion: 1,
+            },
+        ],
+    )
+    // Stays retorna [[...candidates]] (array dentro de array)
+    const flat = Array.isArray(result) && Array.isArray(result[0]) ? result[0] : (result as unknown as MasterCandidate[])
+    return flat ?? []
+}
+
+/**
+ * Vincula listing como FILHO de outra (price-mirror). Em LIVE, o preço do
+ * filho passa a refletir o master continuamente.
+ *
+ * reltype:
+ *   - "fill"   → modo padrão da Stays UI (filho herda preço do master)
+ *
+ * Em dry-run: apenas loga.
+ */
+export async function linkPriceMirror(params: {
+    listingId: string
+    masterListingId: string
+    reltype?: "fill"
+    dryRun?: boolean
+}): Promise<{ dryRun: boolean; result?: unknown }> {
+    if (params.dryRun) {
+        console.log(
+            `[stays:dry-run] linkPriceMirror listing=${params.listingId} → master=${params.masterListingId} (reltype=${params.reltype ?? "fill"})`,
+        )
+        return { dryRun: true }
+    }
+    const result = await staysJsonRpc("apartment.linkMasterApartmentPrices", [
+        "",
+        {
+            _idapartment: params.listingId,
+            _idmaster: params.masterListingId,
+            reltype: params.reltype ?? "fill",
+        },
+    ])
+    return { dryRun: false, result }
+}
+
 /** Re-export para callers que precisam tratar StaysSessionError. */
 export { StaysSessionError }

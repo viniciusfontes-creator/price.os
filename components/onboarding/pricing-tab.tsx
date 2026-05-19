@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { RegionPicker } from "./region-picker"
+import { MirrorPicker } from "./mirror-picker"
 
 // ---------------------------------------------------------------------------
 // Types (espelham a resposta de GET /api/onboarding/[id]/pricing)
@@ -252,7 +253,13 @@ export function PricingTab({ onboardingId }: Props) {
 
             {/* Card Espelhamento */}
             {loaded.mirror && (
-                <MirrorCard mirror={loaded.mirror} listingId={loaded.stays_listing_id} />
+                <MirrorCard
+                    mirror={loaded.mirror}
+                    listingId={loaded.stays_listing_id}
+                    onboardingId={onboardingId}
+                    regionId={loaded.stays_region_id}
+                    onChanged={() => mutate()}
+                />
             )}
 
             {!hasStaysData && (
@@ -410,7 +417,19 @@ function SeasonRow({
     )
 }
 
-function MirrorCard({ mirror, listingId }: { mirror: MirrorInfo; listingId: string | null }) {
+function MirrorCard({
+    mirror,
+    listingId,
+    onboardingId,
+    regionId,
+    onChanged,
+}: {
+    mirror: MirrorInfo
+    listingId: string | null
+    onboardingId: string
+    regionId: string | null
+    onChanged: () => void
+}) {
     if (mirror.role === "standalone") {
         return (
             <Card>
@@ -420,11 +439,24 @@ function MirrorCard({ mirror, listingId }: { mirror: MirrorInfo; listingId: stri
                         Espelhamento
                     </CardTitle>
                 </CardHeader>
-                <CardContent className="text-sm text-muted-foreground">
-                    <span className="flex items-center gap-2">
+                <CardContent className="space-y-3 text-sm">
+                    <span className="flex items-center gap-2 text-muted-foreground">
                         <CheckCircle2 className="h-4 w-4 text-green-600" />
                         Unidade autônoma — não compartilha preço com nenhuma outra.
                     </span>
+                    {listingId && (
+                        <div className="flex items-center justify-between gap-2 pt-1">
+                            <span className="text-xs text-muted-foreground">
+                                Quer espelhar o preço de outra unidade?
+                            </span>
+                            <MirrorPicker
+                                onboardingId={onboardingId}
+                                regionId={regionId}
+                                excludeListingId={listingId}
+                                onChanged={onChanged}
+                            />
+                        </div>
+                    )}
                 </CardContent>
             </Card>
         )
