@@ -38,6 +38,8 @@ interface ConfigSeason {
     _idseason: string
     from?: string
     to?: string
+    /** Nome do season-template na Stays (ex.: "abril e maio", "Réveillon 2027"). */
+    name?: string
     current_base_rate?: number | null
     suggested_base_rate?: number | null
     approved_base_rate?: number | null
@@ -387,12 +389,20 @@ function SeasonRow({
     const isPremium = season.reason?.toLowerCase().includes("réveillon") ||
         season.reason?.toLowerCase().includes("carnaval")
 
+    const dateRange =
+        season.from && season.to ? `${fmtDate(season.from)} → ${fmtDate(season.to)}` : null
+    const primaryLabel = season.name ?? dateRange ?? "—"
+    const showDatesSubline = !!season.name && !!dateRange
+
     return (
         <TableRow>
             <TableCell>
-                <div className="font-medium text-sm">
-                    {season.from && season.to ? `${fmtDate(season.from)} → ${fmtDate(season.to)}` : "—"}
-                </div>
+                <div className="font-medium text-sm">{primaryLabel}</div>
+                {showDatesSubline && (
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {dateRange}
+                    </div>
+                )}
                 {isPremium && <Badge variant="secondary" className="mt-1 text-xs bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">premium</Badge>}
             </TableCell>
             <TableCell className="text-right tabular-nums text-sm text-muted-foreground">

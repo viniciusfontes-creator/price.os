@@ -13,6 +13,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/app/api/auth/[...nextauth]/route"
 import { getOnboarding, updateOnboarding } from "@/lib/onboarding/repository"
+import { listSeasonTemplates } from "@/lib/stays/pricing"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -44,23 +45,59 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const row = await getOnboarding(params.id)
     if (!row) return NextResponse.json({ error: "Não encontrado" }, { status: 404 })
 
-    const snapshot = (row as unknown as Record<string, unknown>).stays_snapshot_seasons as
-        | { items?: unknown[]; mirror?: unknown }
+    const r = row as unknown as Record<string, unknown>
+    const snapshot = r.stays_snapshot_seasons as
+        | { items?: Array<Record<string, unknown>>; mirror?: unknown }
         | null
+    const regionId = r.stays_region_id as string | null
+    const pricingConfig = r.pricing_config as
+        | { seasons?: Array<Record<string, unknown>>; [k: string]: unknown }
+        | null
+
+    // Enriquece com nome do template Stays (campo "name" do season-template,
+    // ex.: "abril e maio", "Réveillon 2027"). Necessário porque
+    // listing-rates-sell traz só _idseason — o nome vive em seasons-sell.
+    let templateNames: Map<string, string> | null = null
+    if (regionId) {
+        try {
+            const templates = await listSeasonTemplates(regionId)
+            templateNames = new Map(templates.map((t) => [t._id, t.name]))
+        } catch {
+            // Falha aqui não bloqueia o GET — front cai no fallback de datas.
+            templateNames = null
+        }
+    }
+
+    const enrichedSnapshot = (snapshot?.items ?? []).map((s) => {
+        const idseason = (s as Record<string, unknown>)._idseason as string | undefined
+        const name = idseason ? templateNames?.get(idseason) : undefined
+        return name ? { ...s, name } : s
+    })
+
+    const enrichedConfig = pricingConfig
+        ? {
+              ...pricingConfig,
+              seasons: (pricingConfig.seasons ?? []).map((s) => {
+                  const idseason = (s as Record<string, unknown>)._idseason as string | undefined
+                  const name = idseason ? templateNames?.get(idseason) : undefined
+                  return name ? { ...s, name } : s
+              }),
+          }
+        : null
 
     return NextResponse.json({
         idpropriedade: row.idpropriedade,
         state: row.state,
-        stays_listing_id: (row as unknown as Record<string, unknown>).stays_listing_id ?? null,
-        stays_region_id: (row as unknown as Record<string, unknown>).stays_region_id ?? null,
-        stays_region_name: (row as unknown as Record<string, unknown>).stays_region_name ?? null,
-        snapshot_seasons: snapshot?.items ?? [],
+        stays_listing_id: r.stays_listing_id ?? null,
+        stays_region_id: regionId,
+        stays_region_name: r.stays_region_name ?? null,
+        snapshot_seasons: enrichedSnapshot,
         mirror: snapshot?.mirror ?? null,
-        pricing_config: (row as unknown as Record<string, unknown>).pricing_config ?? null,
+        pricing_config: enrichedConfig,
         sync: {
-            status: (row as unknown as Record<string, unknown>).stays_sync_status ?? "pending",
-            synced_at: (row as unknown as Record<string, unknown>).stays_synced_at ?? null,
-            errors: (row as unknown as Record<string, unknown>).stays_sync_errors ?? null,
+            status: r.stays_sync_status ?? "pending",
+            synced_at: r.stays_synced_at ?? null,
+            errors: r.stays_sync_errors ?? null,
         },
     })
 }
