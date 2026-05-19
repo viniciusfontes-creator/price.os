@@ -17,6 +17,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase-server"
 import {
     computePeriodDates,
+    inferRule,
     type StaysPeriodRule,
 } from "@/lib/stays/period-rule"
 import { FERIADOS, ONBOARDING_RULES } from "../constants"
@@ -77,6 +78,11 @@ async function loadSazonalidadePraca(praca: string | null | undefined): Promise<
             }
         }).pricing_periods
         const sp = (r as unknown as { stays_period: { rule?: StaysPeriodRule } | null }).stays_period
+        // Quando stays_period.rule não está cadastrada, infere a partir do nome
+        // + datas. Resolve o bug de Semana Santa/Carnaval/Corpus Christi sendo
+        // shiftadas literalmente +1 ano (datas erradas pra anos com Páscoa
+        // em mês diferente, ex: Páscoa 2027 = 28/março).
+        const rule = sp?.rule ?? inferRule(pp.name, pp.start_date, pp.end_date)
         return {
             seasonality_period_id: r.id,
             name: pp.name,
@@ -85,7 +91,7 @@ async function loadSazonalidadePraca(praca: string | null | undefined): Promise<
             end_date: pp.end_date,
             percent: Number(r.percent),
             expected_nights: r.expected_nights ?? pp.expected_nights ?? null,
-            rule: sp?.rule ?? null,
+            rule,
         }
     })
 }
@@ -202,6 +208,8 @@ function calculateFromSazonalidade(
                 faturamento_feriado: fat,
                 diaria_media_feriado: noites > 0 ? Number((fat / noites).toFixed(2)) : 0,
                 seasonality_period_id: ev.seasonality_period_id,
+                from: ev.from,
+                to: ev.to,
             }
         })
 

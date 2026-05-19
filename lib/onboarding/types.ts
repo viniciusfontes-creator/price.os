@@ -107,6 +107,9 @@ export interface MetaDistribuicaoMensal {
         diaria_media_feriado: number
         /** Quando vem da sazonalidade Supabase, identificador do period. */
         seasonality_period_id?: string
+        /** Datas reais projetadas do evento (após nextOccurrence). YYYY-MM-DD. */
+        from?: string
+        to?: string
     }>
     nao_feriado: {
         noites_nao_feriado: number

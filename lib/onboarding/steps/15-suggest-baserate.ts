@@ -124,28 +124,71 @@ export async function suggestSeasonBaserates(
     }
 
     /**
-     * Match v3: tenta achar o EVENTO específico no array `feriados[]` de cada mês
-     * cujas datas se sobrepõem com a season da Stays. Se nenhum evento bate,
-     * usa diária do mês cheio.
+     * Match v4: overlap REAL de datas entre o feriado e a season da Stays.
+     * Anteriormente v3 fazia match por mês, o que causava bugs como rotular
+     * "30/abr→04/mai 2027" como Semana Santa (Páscoa 2027 = 28/mar).
+     *
+     * Considera overlap quando os intervalos [from, to-1) e [s.from, s.to-1)
+     * têm pelo menos 1 dia em comum. Fallback: se o feriado não tem `from/to`
+     * (sazonalidade antiga sem regra), volta ao match por mês.
      */
-    function findEventOverlap(s: ListingSeason): { month: string; event: { nome: string; noites_feriado: number; diaria_media_feriado: number; faturamento_feriado: number } } | null {
-        const sFrom = new Date(s.from + "T00:00:00Z")
-        const sToInclusive = new Date(new Date(s.to + "T00:00:00Z").getTime() - 86400000)
+    function findEventOverlap(s: ListingSeason): {
+        month: string
+        event: {
+            nome: string
+            noites_feriado: number
+            diaria_media_feriado: number
+            faturamento_feriado: number
+        }
+    } | null {
+        const sFromMs = new Date(s.from + "T00:00:00Z").getTime()
+        const sToMsInclusive = new Date(s.to + "T00:00:00Z").getTime() - 86400000
+        const sFromMonth = new Date(sFromMs).getUTCMonth()
+        const sToMonth = new Date(sToMsInclusive).getUTCMonth()
+
+        // Bucket de candidatos: feriados com overlap real (>0 dias).
+        const candidates: Array<{
+            month: string
+            event: NonNullable<typeof meta[number]["feriados"]>[number]
+            overlapDays: number
+            hasDates: boolean
+        }> = []
+
         for (const m of meta) {
             for (const f of m.feriados ?? []) {
-                // Não temos as datas dos feriados[] (vêm da sazonalidade), aproximamos
-                // por NOME + MÊS. Refinamento: armazenar from/to no array tb.
-                if ((f.noites_feriado || 0) > 0) {
+                if ((f.noites_feriado || 0) <= 0) continue
+                if (f.from && f.to) {
+                    const fFromMs = new Date(f.from + "T00:00:00Z").getTime()
+                    const fToMsInclusive = new Date(f.to + "T00:00:00Z").getTime() - 86400000
+                    const overlapStart = Math.max(sFromMs, fFromMs)
+                    const overlapEnd = Math.min(sToMsInclusive, fToMsInclusive)
+                    const overlapDays =
+                        overlapEnd >= overlapStart
+                            ? Math.round((overlapEnd - overlapStart) / 86400000) + 1
+                            : 0
+                    if (overlapDays > 0) {
+                        candidates.push({ month: m.mes, event: f, overlapDays, hasDates: true })
+                    }
+                } else {
+                    // Fallback legacy: match por mês quando feriado não tem datas.
                     const monthIdx = MES_PT.indexOf(m.mes)
-                    if (monthIdx === sFrom.getUTCMonth() || monthIdx === sToInclusive.getUTCMonth()) {
-                        // Match por proximidade (mês). Se temos múltiplos eventos no mês,
-                        // o de menor diária ganha (mais conservador).
-                        return { month: m.mes, event: f }
+                    if (monthIdx === sFromMonth || monthIdx === sToMonth) {
+                        candidates.push({ month: m.mes, event: f, overlapDays: 0, hasDates: false })
                     }
                 }
             }
         }
-        return null
+        if (candidates.length === 0) return null
+
+        // Prefere matches com datas reais e maior overlap. Em empate, menor diária
+        // (conservador).
+        candidates.sort((a, b) => {
+            if (a.hasDates !== b.hasDates) return a.hasDates ? -1 : 1
+            if (a.overlapDays !== b.overlapDays) return b.overlapDays - a.overlapDays
+            return a.event.diaria_media_feriado - b.event.diaria_media_feriado
+        })
+        const winner = candidates[0]
+        return { month: winner.month, event: winner.event }
     }
 
     return snapshot.map((s) => {
