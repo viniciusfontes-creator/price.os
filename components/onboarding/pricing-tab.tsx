@@ -15,6 +15,7 @@ import {
     Copy, Layers, ArrowDownRight, Users,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { RegionPicker } from "./region-picker"
 
 // ---------------------------------------------------------------------------
 // Types (espelham a resposta de GET /api/onboarding/[id]/pricing)
@@ -226,9 +227,19 @@ export function PricingTab({ onboardingId }: Props) {
                         <code className="text-xs">{loaded.stays_listing_id ?? "—"}</code>
                     </Stat>
                     <Stat label={regionLabel}>
-                        <span className={regionIsRealLink ? "" : "text-amber-700 dark:text-amber-400"}>
-                            {loaded.stays_region_name ?? "—"}
-                        </span>
+                        <div className="flex items-center gap-1 flex-wrap">
+                            <span className={regionIsRealLink ? "" : "text-amber-700 dark:text-amber-400"}>
+                                {loaded.stays_region_name ?? "—"}
+                            </span>
+                            {loaded.stays_listing_id && (
+                                <RegionPicker
+                                    onboardingId={onboardingId}
+                                    currentRegionId={loaded.stays_region_id}
+                                    currentRegionName={loaded.stays_region_name}
+                                    onChanged={() => mutate()}
+                                />
+                            )}
+                        </div>
                     </Stat>
                     <Stat label="Seasons detectadas">
                         <span className="tabular-nums">{seasons.length}</span>
