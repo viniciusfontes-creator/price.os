@@ -172,11 +172,17 @@ export async function suggestSeasonBaserates(
             suggested = Number(eventMatch.event.diaria_media_feriado.toFixed(2))
             reason = `${eventMatch.event.nome} (meta: ${eventMatch.event.noites_feriado} noites a ${fmtBRL(suggested)})${describeDelta(s.baseRateValue, suggested)}`
         } else if (startMeta || endMeta) {
-            // Período longo → diária média do mês de start (ou end se vazio)
+            // Período longo (mês cheio) → diária dos dias NORMAIS (não inclui feriados).
+            // Feriados têm seasons curtas próprias na Stays e são tratados pelo eventMatch.
             const chosenMeta = startMeta ?? endMeta!
             const chosenMonth = startMeta ? startMonth : endMonth
-            suggested = Number(chosenMeta.meta_diaria_media.toFixed(2))
-            reason = `Diária média de ${chosenMonth} (meta: ${fmtBRL(chosenMeta.meta_faturamento)} ÷ ${chosenMeta.meta_noites_2026} noites)${describeDelta(s.baseRateValue, suggested)}`
+            const naoFeriado = chosenMeta.nao_feriado
+            suggested = Number(
+                (naoFeriado?.diaria_media_nao_feriado ?? chosenMeta.meta_diaria_media).toFixed(2),
+            )
+            const noites = naoFeriado?.noites_nao_feriado ?? chosenMeta.meta_noites_2026
+            const fat = naoFeriado?.faturamento_nao_feriado ?? chosenMeta.meta_faturamento
+            reason = `Diária dia normal de ${chosenMonth} (meta sem feriados: ${fmtBRL(fat)} ÷ ${noites} noites)${describeDelta(s.baseRateValue, suggested)}`
         } else if (s.baseRateValue && mediana) {
             suggested = mediana
             reason = `Sem meta de ${startMonth} — fallback: mediana sub_grupo${describeDelta(s.baseRateValue, mediana)}`

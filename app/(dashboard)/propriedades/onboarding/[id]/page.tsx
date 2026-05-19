@@ -99,6 +99,11 @@ interface MetaMensal {
         diaria_media_feriado: number
         noites_feriado: number
     }>
+    nao_feriado?: {
+        noites_nao_feriado: number
+        faturamento_nao_feriado: number
+        diaria_media_nao_feriado: number
+    }
 }
 
 interface AnaliseFinanceira {
@@ -736,6 +741,10 @@ function AnaliseTab({
                                 {meses.map((m, i) => {
                                     const linha = fin?.valor_liquido_mensal[i]
                                     const eventos = m.feriados ?? (m.feriado ? [m.feriado] : [])
+                                    // Diária = dias normais (sem feriado). Se a meta não computou nao_feriado, fallback.
+                                    const diariaNormal =
+                                        m.nao_feriado?.diaria_media_nao_feriado ?? m.meta_diaria_media
+                                    const noitesNormal = m.nao_feriado?.noites_nao_feriado ?? m.meta_noites_2026
                                     return (
                                         <tr key={m.mes} className="hover:bg-[#fafafa] dark:hover:bg-zinc-800/50">
                                             <td className="px-3 py-2 font-medium text-[#1d1d1f] dark:text-zinc-100">
@@ -751,8 +760,8 @@ function AnaliseTab({
                                                 )}
                                             </td>
                                             <td className="px-3 py-2 text-right tabular-nums">{formatBRL(m.meta_faturamento, 0)}</td>
-                                            <td className="px-3 py-2 text-right tabular-nums text-[#86868b]">{m.meta_noites_2026}</td>
-                                            <td className="px-3 py-2 text-right tabular-nums text-[#86868b]">{formatBRL(m.meta_diaria_media, 0)}</td>
+                                            <td className="px-3 py-2 text-right tabular-nums text-[#86868b]">{noitesNormal}</td>
+                                            <td className="px-3 py-2 text-right tabular-nums text-[#86868b]">{formatBRL(diariaNormal, 0)}</td>
                                             <td className="px-3 py-2 text-right tabular-nums font-medium" style={{ color: (linha?.valor_liquido ?? 0) >= 0 ? "#34c759" : "#ff3b30" }}>
                                                 {formatBRL(linha?.valor_liquido, 0)}
                                             </td>

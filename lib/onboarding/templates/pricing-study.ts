@@ -91,8 +91,9 @@ export function renderPricingStudyHtml(data: PricingStudyData): string {
 
     const linhasMensais = MONTHS_ORDER.map((mes) => {
         const d = distMap.get(mes)
-        const diaria = d ? brl(d.meta_diaria_media) : "—"
-        // Suporta múltiplos eventos por mês (v3) — concatena todos.
+        // Diária = dias NORMAIS (sem feriados). Feriados aparecem na coluna ao lado.
+        const diariaNormal = d?.nao_feriado?.diaria_media_nao_feriado ?? d?.meta_diaria_media ?? null
+        const diaria = diariaNormal != null ? brl(diariaNormal) : "—"
         const feriadosArr = (d?.feriados ?? (d?.feriado ? [d.feriado] : [])) as Array<{
             nome: string
             faturamento_feriado: number

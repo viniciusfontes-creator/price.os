@@ -114,8 +114,12 @@ function calculateFromSazonalidade(
         const dates = ev.rule
             ? computePeriodDates(ev.rule, targetYear)
             : { from: ev.start_date, to: ev.end_date }
-        const fromMonth = new Date(dates.from + "T00:00:00Z").getUTCMonth()
-        return { ...ev, mes: MES_PT[fromMonth], from: dates.from, to: dates.to }
+        // Regra: o mês do evento é o mês do END_DATE (último dia, inclusivo).
+        // Ex.: Réveillon (26/12 → 02/01) → Janeiro; Finados (30/10 → 02/11) → Novembro.
+        // O end_date no Supabase é inclusivo (mesmo padrão da Stays /seasons-sell).
+        const endDate = new Date(dates.to + "T00:00:00Z")
+        const endMonth = endDate.getUTCMonth()
+        return { ...ev, mes: MES_PT[endMonth], from: dates.from, to: dates.to }
     })
 
     const eventosByMes = new Map<string, EventoMapped[]>()
