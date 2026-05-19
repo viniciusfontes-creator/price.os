@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-    Calendar, Link2, AlertCircle, CheckCircle2, Loader2, RefreshCw,
+    Calendar, Link2, AlertCircle, CheckCircle2, Loader2, RefreshCw, Cable,
 } from "lucide-react"
+import { SyncStaysDialog } from "@/components/admin/sync-stays-dialog"
 
 interface Region {
     _id: string
@@ -48,6 +49,7 @@ export default function SazonalidadesAdminPage() {
         fetcher,
     )
     const [saving, setSaving] = useState<string | null>(null)
+    const [syncDialog, setSyncDialog] = useState<{ id: string; name: string } | null>(null)
 
     async function saveRegion(seasonalityId: string, regionId: string | null) {
         setSaving(seasonalityId)
@@ -126,7 +128,7 @@ export default function SazonalidadesAdminPage() {
                                     <TableHead>Praças</TableHead>
                                     <TableHead>Periods</TableHead>
                                     <TableHead>Region Stays</TableHead>
-                                    <TableHead className="text-right">Status</TableHead>
+                                    <TableHead className="text-right">Ações</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -173,13 +175,24 @@ export default function SazonalidadesAdminPage() {
                                             </Select>
                                         </TableCell>
                                         <TableCell className="text-right">
-                                            {saving === s.id ? (
-                                                <Loader2 className="h-4 w-4 animate-spin ml-auto text-muted-foreground" />
-                                            ) : s.stays_region_id ? (
-                                                <CheckCircle2 className="h-4 w-4 ml-auto text-green-600" />
-                                            ) : (
-                                                <AlertCircle className="h-4 w-4 ml-auto text-amber-600" />
-                                            )}
+                                            <div className="flex items-center justify-end gap-2">
+                                                {saving === s.id ? (
+                                                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                                ) : s.stays_region_id ? (
+                                                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                                ) : (
+                                                    <AlertCircle className="h-4 w-4 text-amber-600" />
+                                                )}
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={!s.stays_region_id}
+                                                    onClick={() => setSyncDialog({ id: s.id, name: s.name })}
+                                                >
+                                                    <Cable className="h-3.5 w-3.5 mr-1.5" />
+                                                    Sincronizar
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))}
@@ -188,6 +201,14 @@ export default function SazonalidadesAdminPage() {
                     )}
                 </CardContent>
             </Card>
+
+            <SyncStaysDialog
+                seasonalityId={syncDialog?.id ?? null}
+                seasonalityName={syncDialog?.name ?? ""}
+                open={!!syncDialog}
+                onOpenChange={(open) => !open && setSyncDialog(null)}
+                onSaved={() => mutate()}
+            />
 
             <Card className="bg-blue-50 dark:bg-blue-950/30 border-blue-200">
                 <CardContent className="py-4 text-sm space-y-1">

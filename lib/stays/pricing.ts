@@ -127,6 +127,79 @@ export async function patchListingSeason(params: {
 }
 
 // ============================================================================
+// Season Templates (periods configurados na Region — globais)
+// ============================================================================
+//
+// Distinção crítica:
+//   - SEASON TEMPLATE = period configurado na Region (vive em /parr/seasons-sell).
+//     Tem `_idregion`. Cada Region tem N templates (Junho 2026, Réveillon, etc.)
+//   - LISTING SEASON  = instância do template para uma listing (vive em
+//     /parr/listing-rates-sell). Tem `_idseason` apontando para o template.
+//
+// Criação/edição de templates afeta TODAS as listings vinculadas à Region.
+
+export interface SeasonTemplate {
+    _id: string
+    _idregion: string
+    name: string
+    hint: string
+    type: "season" | "event"
+    from: string
+    to: string
+    status: "active" | "inactive"
+    ratePlans: RatePlan[]
+    useMonthlyRate: boolean
+}
+
+export interface CreateSeasonTemplateInput {
+    _idregion: string
+    type: "season" | "event"
+    name: string
+    hint: string
+    from: string
+    to: string
+    status?: "active" | "inactive"
+    ratePlans: Array<{ minStay: number; _i_percent: number }>
+    useMonthlyRate?: boolean
+}
+
+/** GET /parr/seasons-sell — lista templates. Filtra por `_idregion` opcional. */
+export async function listSeasonTemplates(regionId?: string): Promise<SeasonTemplate[]> {
+    const q = regionId ? `?_idregion=${encodeURIComponent(regionId)}` : ""
+    return staysFetch<SeasonTemplate[]>(`/external/v1/parr/seasons-sell${q}`)
+}
+
+/** POST /parr/seasons-sell — cria template novo na region. Stays limita a 3 anos futuros. */
+export async function createSeasonTemplate(input: CreateSeasonTemplateInput): Promise<SeasonTemplate> {
+    return staysFetch<SeasonTemplate>("/external/v1/parr/seasons-sell", {
+        method: "POST",
+        body: {
+            status: "active",
+            useMonthlyRate: false,
+            ...input,
+        },
+    })
+}
+
+/** PATCH /parr/seasons-sell/{id} — edita template (nome, datas, ratePlans). */
+export async function patchSeasonTemplate(
+    id: string,
+    patch: Partial<Omit<SeasonTemplate, "_id" | "_idregion">>,
+): Promise<SeasonTemplate> {
+    return staysFetch<SeasonTemplate>(`/external/v1/parr/seasons-sell/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: patch,
+    })
+}
+
+/** DELETE /parr/seasons-sell/{id} — remove template. */
+export async function deleteSeasonTemplate(id: string): Promise<void> {
+    await staysFetch<void>(`/external/v1/parr/seasons-sell/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+    })
+}
+
+// ============================================================================
 // Clone-groups (espelhamento de unidades)
 // ============================================================================
 
