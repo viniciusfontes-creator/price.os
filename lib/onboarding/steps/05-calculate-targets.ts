@@ -94,29 +94,68 @@ async function loadSazonalidadePraca(praca: string | null | undefined): Promise<
 // v3: Cálculo via sazonalidade do Supabase
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Projeção para a próxima ocorrência FUTURA (regra "olhar pra frente")
+// ---------------------------------------------------------------------------
+
+function shiftDateYear(isoDate: string, deltaYears: number): string {
+    const dashIdx = isoDate.indexOf("-")
+    if (dashIdx < 0) return isoDate
+    const year = Number(isoDate.slice(0, dashIdx))
+    return `${year + deltaYears}${isoDate.slice(dashIdx)}`
+}
+
+function nextOccurrence(
+    period: { rule: StaysPeriodRule | null; start_date: string; end_date: string },
+    today: Date,
+    startYear: number,
+): { from: string; to: string } {
+    if (period.rule) {
+        let year = startYear
+        let dates = computePeriodDates(period.rule, year)
+        // Avança até end_date estar no futuro (ou hoje)
+        while (new Date(dates.to + "T00:00:00Z") < today && year < startYear + 5) {
+            year += 1
+            dates = computePeriodDates(period.rule, year)
+        }
+        return dates
+    }
+    // Sem rule: aplica shift de anos uniforme no from/to
+    let from = period.start_date
+    let to = period.end_date
+    while (new Date(to + "T00:00:00Z") < today) {
+        from = shiftDateYear(from, 1)
+        to = shiftDateYear(to, 1)
+    }
+    return { from, to }
+}
+
 function calculateFromSazonalidade(
     metaAnual: number,
     sazo: SazonalidadePeriod[],
-    targetYear: number,
+    _targetYear: number,
     detalhe: PracaMonthDetail[],
 ): MetaDistribuicaoMensal[] {
+    const today = new Date()
+    today.setUTCHours(0, 0, 0, 0)
+    const currentYear = today.getUTCFullYear()
+
     // Separa meses e eventos
     const meses = sazo.filter((p) => p.type === "month")
     const eventos = sazo.filter((p) => p.type === "event")
 
-    // Para cada evento, descobre o mês (projetando via rule se houver)
+    // Para cada evento, projeta a próxima ocorrência FUTURA
     interface EventoMapped extends SazonalidadePeriod {
         mes: string
         from: string
         to: string
     }
     const eventosMapped: EventoMapped[] = eventos.map((ev) => {
-        const dates = ev.rule
-            ? computePeriodDates(ev.rule, targetYear)
-            : { from: ev.start_date, to: ev.end_date }
+        const dates = nextOccurrence(ev, today, currentYear)
         // Regra: o mês do evento é o mês do END_DATE (último dia, inclusivo).
-        // Ex.: Réveillon (26/12 → 02/01) → Janeiro; Finados (30/10 → 02/11) → Novembro.
-        // O end_date no Supabase é inclusivo (mesmo padrão da Stays /seasons-sell).
+        // Ex.: Réveillon (26/12/X → 02/01/X+1) → Janeiro
+        //      Finados (30/10/X → 02/11/X) → Novembro
+        //      Semana Santa 2027 (25-29/03/2027) → Março (Páscoa 28/03/2027)
         const endDate = new Date(dates.to + "T00:00:00Z")
         const endMonth = endDate.getUTCMonth()
         return { ...ev, mes: MES_PT[endMonth], from: dates.from, to: dates.to }
@@ -129,11 +168,20 @@ function calculateFromSazonalidade(
         eventosByMes.set(ev.mes, arr)
     }
 
+    // Pra meses, também projeta. Cada "Janeiro" vira o próximo Janeiro futuro.
+    interface MesMapped extends SazonalidadePeriod {
+        monthIdx: number
+        from: string
+        to: string
+    }
+    const mesesMapped: MesMapped[] = meses.map((m) => {
+        const dates = nextOccurrence(m, today, currentYear)
+        const monthIdx = new Date(dates.from + "T00:00:00Z").getUTCMonth()
+        return { ...m, monthIdx, from: dates.from, to: dates.to }
+    })
+
     return MES_PT.map((mesNome, idx) => {
-        const periodMes = meses.find((m) => {
-            const m0 = new Date(m.start_date + "T00:00:00Z").getUTCMonth()
-            return m0 === idx
-        })
+        const periodMes = mesesMapped.find((m) => m.monthIdx === idx)
 
         const meta_faturamento = periodMes
             ? Number((metaAnual * (periodMes.percent / 100)).toFixed(2))

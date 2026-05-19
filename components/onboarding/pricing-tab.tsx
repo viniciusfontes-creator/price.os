@@ -135,6 +135,11 @@ export function PricingTab({ onboardingId }: Props) {
     const loaded = data!
     const seasons = loaded.pricing_config?.seasons ?? []
     const hasStaysData = !!loaded.stays_listing_id && seasons.length > 0
+    // Heurística: se snapshot retornou 0 seasons, a unidade NÃO está vinculada
+    // à region sugerida na Stays (provavelmente está em "Padrão" — uma region
+    // vazia/default que não tem templates configurados).
+    const regionIsRealLink = loaded.snapshot_seasons.length > 0
+    const regionLabel = regionIsRealLink ? "Região vinculada no PMS" : "Região sugerida (não vinculada)"
 
     // ----- Auto-save com debounce 800ms -----
     function scheduleSave(newEdits: Record<string, { base?: string; monthly?: string }>) {
@@ -220,8 +225,10 @@ export function PricingTab({ onboardingId }: Props) {
                     <Stat label="Listing ID (Stays)">
                         <code className="text-xs">{loaded.stays_listing_id ?? "—"}</code>
                     </Stat>
-                    <Stat label="Região">
-                        {loaded.stays_region_name ?? "—"}
+                    <Stat label={regionLabel}>
+                        <span className={regionIsRealLink ? "" : "text-amber-700 dark:text-amber-400"}>
+                            {loaded.stays_region_name ?? "—"}
+                        </span>
                     </Stat>
                     <Stat label="Seasons detectadas">
                         <span className="tabular-nums">{seasons.length}</span>
@@ -239,16 +246,32 @@ export function PricingTab({ onboardingId }: Props) {
 
             {!hasStaysData && (
                 <Card className="bg-amber-50 dark:bg-amber-950/30 border-amber-200">
-                    <CardContent className="py-4 flex items-center gap-3">
-                        <AlertCircle className="h-5 w-5 text-amber-600" />
-                        <div className="text-sm">
-                            <p className="font-medium">Snapshot de seasons indisponível</p>
-                            <p className="text-muted-foreground">
-                                A unidade ainda não está vinculada a uma região no PMS Stays, ou o
-                                pipeline não conseguiu puxar os dados. Vincule a unidade a uma
-                                região na Stays e reprocesse o onboarding.
-                            </p>
+                    <CardContent className="py-4 space-y-3">
+                        <div className="flex items-start gap-3">
+                            <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                            <div className="text-sm">
+                                <p className="font-medium">
+                                    A unidade não está vinculada a nenhuma região no PMS Stays
+                                </p>
+                                <p className="text-muted-foreground mt-1">
+                                    Na Stays, a unidade está em <code className="text-xs bg-amber-100 dark:bg-amber-900 px-1 rounded">Padrão</code> (sem templates).
+                                    Sugerimos <b>{loaded.stays_region_name ?? "—"}</b> com base na
+                                    sazonalidade da praça.
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-2">
+                                    <b>Passos:</b> Stays → Anúncio → Financeiro → Configuração geral
+                                    de preço → escolher Região → Salvar → voltar aqui e Reprocessar.
+                                </p>
+                            </div>
                         </div>
+                        <a
+                            href={`https://beto.stays.com.br/admin/listings`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300 hover:underline"
+                        >
+                            Abrir no Stays →
+                        </a>
                     </CardContent>
                 </Card>
             )}
