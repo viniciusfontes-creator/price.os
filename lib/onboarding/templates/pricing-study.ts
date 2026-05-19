@@ -92,10 +92,17 @@ export function renderPricingStudyHtml(data: PricingStudyData): string {
     const linhasMensais = MONTHS_ORDER.map((mes) => {
         const d = distMap.get(mes)
         const diaria = d ? brl(d.meta_diaria_media) : "—"
+        // Suporta múltiplos eventos por mês (v3) — concatena todos.
+        const feriadosArr = (d?.feriados ?? (d?.feriado ? [d.feriado] : [])) as Array<{
+            nome: string
+            faturamento_feriado: number
+        }>
         const feriadoFat =
-            d?.feriado != null
-                ? `R$ ${brl(d.feriado.faturamento_feriado)} (${escapeHtml(FERIADO_LABEL[mes] || d.feriado.nome)})`
-                : ` -- `
+            feriadosArr.length > 0
+                ? feriadosArr
+                      .map((f) => `R$ ${brl(f.faturamento_feriado)} (${escapeHtml(f.nome)})`)
+                      .join("<br>")
+                : " -- "
         return `<tr>
             <td class="font-semibold">${mes}</td>
             <td class="text-right">R$ ${diaria}</td>

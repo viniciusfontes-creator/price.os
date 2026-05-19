@@ -84,7 +84,7 @@ export async function runEnrichment(
             meses: ctx.pracaStats?.detalhamento_mensal.length || 0,
         })
 
-        ctx = calculateTargets(ctx)
+        ctx = await calculateTargets(ctx)
         await logEvent(onboardingId, idpropriedade, "targets_calculated", { meta_anual: ctx.metaAnual })
         await updateOnboarding(onboardingId, {
             meta_anual: ctx.metaAnual ?? null,

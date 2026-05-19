@@ -170,7 +170,7 @@ export async function applyEdits(
 
     // --- 4. Recalcula targets se necessário ---
     if (needsTargetsRecompute) {
-        const ctxAfterTargets = calculateTargets(baseCtx)
+        const ctxAfterTargets = await calculateTargets(baseCtx)
 
         // Se houve override manual de meta_anual, força esse valor e
         // re-escala a distribuição mensal proporcionalmente.

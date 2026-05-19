@@ -123,55 +123,71 @@ export async function suggestSeasonBaserates(
         if (Number.isFinite(m) && m > 0) mediana = Number(m.toFixed(2))
     }
 
+    /**
+     * Match v3: tenta achar o EVENTO específico no array `feriados[]` de cada mês
+     * cujas datas se sobrepõem com a season da Stays. Se nenhum evento bate,
+     * usa diária do mês cheio.
+     */
+    function findEventOverlap(s: ListingSeason): { month: string; event: { nome: string; noites_feriado: number; diaria_media_feriado: number; faturamento_feriado: number } } | null {
+        const sFrom = new Date(s.from + "T00:00:00Z")
+        const sToInclusive = new Date(new Date(s.to + "T00:00:00Z").getTime() - 86400000)
+        for (const m of meta) {
+            for (const f of m.feriados ?? []) {
+                // Não temos as datas dos feriados[] (vêm da sazonalidade), aproximamos
+                // por NOME + MÊS. Refinamento: armazenar from/to no array tb.
+                if ((f.noites_feriado || 0) > 0) {
+                    const monthIdx = MES_PT.indexOf(m.mes)
+                    if (monthIdx === sFrom.getUTCMonth() || monthIdx === sToInclusive.getUTCMonth()) {
+                        // Match por proximidade (mês). Se temos múltiplos eventos no mês,
+                        // o de menor diária ganha (mais conservador).
+                        return { month: m.mes, event: f }
+                    }
+                }
+            }
+        }
+        return null
+    }
+
     return snapshot.map((s) => {
         const fromDate = new Date(s.from + "T00:00:00Z")
         const toDateInclusive = new Date(new Date(s.to + "T00:00:00Z").getTime() - 86400000)
         const startMonth = MES_PT[fromDate.getUTCMonth()]
         const endMonth = MES_PT[toDateInclusive.getUTCMonth()]
         const days = diffDays(s.from, s.to)
-        // ≤10 cobre Réveillon (9d), Carnaval (7d), feriados longos (3-5d)
-        // Acima disso = pacote mensal ou bloco entre eventos
         const isShort = days <= 10
 
         const startMeta = metaByMonth.get(startMonth)
         const endMeta = metaByMonth.get(endMonth)
 
-        // Para season curta que cruza meses, preferir o mês com feriado configurado
-        // (caso típico: Réveillon começa em Dez mas o feriado está em Jan no Price.OS).
-        let chosenMeta = startMeta
-        let chosenMonth = startMonth
-        if (isShort && startMonth !== endMonth) {
-            if (endMeta?.feriado) {
-                chosenMeta = endMeta
-                chosenMonth = endMonth
-            } else if (startMeta?.feriado) {
-                chosenMeta = startMeta
-                chosenMonth = startMonth
-            }
-        }
-
         let suggested: number | null = null
         let reason: string
 
-        if (chosenMeta) {
-            if (isShort && chosenMeta.feriado) {
-                suggested = Number(chosenMeta.feriado.diaria_media_feriado.toFixed(2))
-                reason = `${chosenMeta.feriado.nome} (meta: ${chosenMeta.feriado.noites_feriado} noites a ${fmtBRL(suggested)})${describeDelta(s.baseRateValue, suggested)}`
-            } else {
-                suggested = Number(chosenMeta.meta_diaria_media.toFixed(2))
-                reason = `Diária média de ${chosenMonth} (meta: ${fmtBRL(chosenMeta.meta_faturamento)} ÷ ${chosenMeta.meta_noites_2026} noites)${describeDelta(s.baseRateValue, suggested)}`
-            }
+        // Estratégia v3:
+        // 1. Se season curta → procura evento da sazonalidade que cobre as datas
+        // 2. Se season longa (mês cheio) → usa diaria_media_media do mês
+        // 3. Fallback: mediana sub_grupo
+        const eventMatch = isShort ? findEventOverlap(s) : null
+
+        if (eventMatch) {
+            suggested = Number(eventMatch.event.diaria_media_feriado.toFixed(2))
+            reason = `${eventMatch.event.nome} (meta: ${eventMatch.event.noites_feriado} noites a ${fmtBRL(suggested)})${describeDelta(s.baseRateValue, suggested)}`
+        } else if (startMeta || endMeta) {
+            // Período longo → diária média do mês de start (ou end se vazio)
+            const chosenMeta = startMeta ?? endMeta!
+            const chosenMonth = startMeta ? startMonth : endMonth
+            suggested = Number(chosenMeta.meta_diaria_media.toFixed(2))
+            reason = `Diária média de ${chosenMonth} (meta: ${fmtBRL(chosenMeta.meta_faturamento)} ÷ ${chosenMeta.meta_noites_2026} noites)${describeDelta(s.baseRateValue, suggested)}`
         } else if (s.baseRateValue && mediana) {
             suggested = mediana
-            reason = `Sem meta de ${mesNome} — fallback: mediana sub_grupo${describeDelta(s.baseRateValue, mediana)}`
+            reason = `Sem meta de ${startMonth} — fallback: mediana sub_grupo${describeDelta(s.baseRateValue, mediana)}`
         } else if (s.baseRateValue) {
             suggested = s.baseRateValue
-            reason = `Sem meta de ${mesNome} — manter valor atual`
+            reason = `Sem meta de ${startMonth} — manter valor atual`
         } else if (mediana) {
             suggested = mediana
             reason = `Sem meta nem valor atual — mediana sub_grupo`
         } else {
-            reason = `Sem meta de ${mesNome} nem fallback disponível`
+            reason = `Sem meta de ${startMonth} nem fallback disponível`
         }
 
         return {

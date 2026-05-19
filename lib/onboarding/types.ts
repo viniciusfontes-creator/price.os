@@ -90,6 +90,7 @@ export interface MetaDistribuicaoMensal {
     meta_noites_2026: number
     meta_faturamento: number
     meta_diaria_media: number
+    /** @deprecated Use `feriados` (array). Mantido pra retrocompat: primeiro item de `feriados`. */
     feriado: {
         nome: string
         pacote_dias: number
@@ -97,6 +98,16 @@ export interface MetaDistribuicaoMensal {
         faturamento_feriado: number
         diaria_media_feriado: number
     } | null
+    /** Todos os eventos do mês (sazonalidade do Supabase). Vazio se praça sem sazonalidade. */
+    feriados: Array<{
+        nome: string
+        pacote_dias: number
+        noites_feriado: number
+        faturamento_feriado: number
+        diaria_media_feriado: number
+        /** Quando vem da sazonalidade Supabase, identificador do period. */
+        seasonality_period_id?: string
+    }>
     nao_feriado: {
         noites_nao_feriado: number
         faturamento_nao_feriado: number

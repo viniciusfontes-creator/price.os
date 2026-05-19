@@ -92,7 +92,13 @@ interface MetaMensal {
     meta_faturamento: number
     meta_noites_2026: number
     meta_diaria_media: number
-    feriado?: { nome: string; faturamento_feriado: number } | null
+    feriado?: { nome: string; faturamento_feriado: number; diaria_media_feriado?: number; noites_feriado?: number } | null
+    feriados?: Array<{
+        nome: string
+        faturamento_feriado: number
+        diaria_media_feriado: number
+        noites_feriado: number
+    }>
 }
 
 interface AnaliseFinanceira {
@@ -729,9 +735,21 @@ function AnaliseTab({
                             <tbody className="divide-y divide-black/[0.04] dark:divide-white/[0.05]">
                                 {meses.map((m, i) => {
                                     const linha = fin?.valor_liquido_mensal[i]
+                                    const eventos = m.feriados ?? (m.feriado ? [m.feriado] : [])
                                     return (
                                         <tr key={m.mes} className="hover:bg-[#fafafa] dark:hover:bg-zinc-800/50">
-                                            <td className="px-3 py-2 font-medium text-[#1d1d1f] dark:text-zinc-100">{m.mes}</td>
+                                            <td className="px-3 py-2 font-medium text-[#1d1d1f] dark:text-zinc-100">
+                                                {m.mes}
+                                                {eventos.length > 0 && (
+                                                    <div className="text-[10px] text-[#86868b] font-normal mt-0.5">
+                                                        {eventos.map((e) => (
+                                                            <div key={e.nome}>
+                                                                · {e.nome} ({(e as { noites_feriado?: number }).noites_feriado ?? "?"}n a {formatBRL((e as { diaria_media_feriado?: number }).diaria_media_feriado ?? 0, 0)})
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td className="px-3 py-2 text-right tabular-nums">{formatBRL(m.meta_faturamento, 0)}</td>
                                             <td className="px-3 py-2 text-right tabular-nums text-[#86868b]">{m.meta_noites_2026}</td>
                                             <td className="px-3 py-2 text-right tabular-nums text-[#86868b]">{formatBRL(m.meta_diaria_media, 0)}</td>
