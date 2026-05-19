@@ -18,7 +18,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/app/api/auth/[...nextauth]/route"
 import { getOnboarding, logEvent, updateOnboarding } from "@/lib/onboarding/repository"
-import { applySeasonPrices } from "@/lib/stays/pricing"
+import { applySeasonPrices, linkListingToRegion } from "@/lib/stays/pricing"
 import { isDryRun } from "@/lib/onboarding/constants"
 
 export const dynamic = "force-dynamic"
@@ -44,6 +44,8 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
     const r = row as unknown as Record<string, unknown>
     const stays_listing_id = r.stays_listing_id as string | null
+    const stays_region_id = r.stays_region_id as string | null
+    const stays_region_name = r.stays_region_name as string | null
     const pricing_config = r.pricing_config as
         | { mode?: string; seasons?: SeasonDecision[] }
         | null
@@ -95,7 +97,40 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
         updates_count: updates.length,
         skipped_count: skipped,
         dry_run: dryRun,
+        region_link_target: stays_region_id,
     })
+
+    // Etapa 1: vincular a listing à region sugerida (se houver e ainda não
+    // estiver vinculada na Stays). Falha aqui não bloqueia o PATCH de seasons
+    // — só registra o erro pra triagem.
+    let regionLink: {
+        attempted: boolean
+        success: boolean
+        error?: string
+    } = { attempted: false, success: false }
+    if (stays_region_id) {
+        regionLink.attempted = true
+        try {
+            await linkListingToRegion({
+                listingId: stays_listing_id,
+                regionId: stays_region_id,
+                dryRun,
+            })
+            regionLink.success = true
+            await logEvent(params.id, row.idpropriedade, "stays_region_linked", {
+                region_id: stays_region_id,
+                region_name: stays_region_name,
+                dry_run: dryRun,
+            })
+        } catch (e) {
+            regionLink.error = e instanceof Error ? e.message : String(e)
+            await logEvent(params.id, row.idpropriedade, "stays_region_link_failed", {
+                region_id: stays_region_id,
+                error: regionLink.error,
+                dry_run: dryRun,
+            })
+        }
+    }
 
     const result = await applySeasonPrices({
         listingId: stays_listing_id,
@@ -137,5 +172,6 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
         failures: result.failures.length,
         failure_details: result.failures,
         skipped,
+        region_link: regionLink,
     })
 }

@@ -17,6 +17,7 @@
  */
 
 import { staysFetch, StaysApiError } from "./client"
+import { staysJsonRpc, StaysSessionError } from "./session-client"
 
 // ============================================================================
 // Types
@@ -330,3 +331,97 @@ export async function applySeasonPrices(params: {
     }
     return result
 }
+
+// ============================================================================
+// JSON-RPC (cookie de sessão) — métodos internos da Stays
+// ============================================================================
+//
+// A REST `/external/v1/` não expõe vínculo de listing↔region nem promoções
+// percentuais. Esses fluxos vivem só no JSON-RPC interno, que está bloqueado
+// pra Basic auth (`HTTP 403 "JSONRPC from external"`) mas funciona com cookie
+// de sessão — ver lib/stays/session-client.ts.
+
+/**
+ * Vincula uma listing a uma price-region (equivalente ao "Configuração geral
+ * de preço → escolher Região → Salvar" na UI Stays).
+ *
+ * Método: `apartment.saveApartment` com payload mínimo:
+ *   { _id: listingObjectId, _idregion: priceRegionId }
+ *
+ * O Colab original também envia `deff_curr: "BRL"` e `_t_unset: {...}` — não
+ * são obrigatórios pra mudar a region, mas se a chamada falhar com schema
+ * error, dá pra reenviar com esses campos.
+ *
+ * Em `dryRun=true` apenas loga e devolve `{ dryRun: true }` sem chamar API.
+ */
+export async function linkListingToRegion(params: {
+    listingId: string // _id ObjectId da listing
+    regionId: string // _id da price-region (ex: "Rota Milagres")
+    dryRun?: boolean
+}): Promise<{ dryRun: boolean; result?: unknown }> {
+    if (params.dryRun) {
+        console.log(
+            `[stays:dry-run] linkListingToRegion listing=${params.listingId} → region=${params.regionId}`,
+        )
+        return { dryRun: true }
+    }
+
+    const result = await staysJsonRpc("apartment.saveApartment", [
+        "",
+        { _id: params.listingId, _idregion: params.regionId },
+    ])
+    return { dryRun: false, result }
+}
+
+/**
+ * Aplica desconto/aumento percentual em um range de datas (equivalente ao
+ * popup "Editar promoção" na UI Stays do calendário).
+ *
+ * Método: `promotion.editPromotionSimple` com:
+ *   { _dtfrom, _dtto, weekdays, _f_value, _b_rise, _idapartment }
+ *
+ * - `value`: percentual (ex. 13 = 13%)
+ * - `isIncrease=false`: desconto (`_b_rise=0`)
+ * - `isIncrease=true`:  aumento  (`_b_rise=1`)
+ * - `weekdays`: array de 0=Dom..6=Sáb (default = todos os dias)
+ */
+export async function applyPromotion(params: {
+    listingPartnerCode: string // ID curto (ex. "RD06H") — o JSON-RPC usa o curto, não o _id
+    from: string // YYYY-MM-DD
+    to: string // YYYY-MM-DD
+    value: number // 0-100
+    isIncrease?: boolean
+    weekdays?: number[]
+    dryRun?: boolean
+}): Promise<{ dryRun: boolean; result?: unknown }> {
+    if (params.value < 0 || params.value > 100) {
+        throw new Error(`applyPromotion: value fora do range 0-100 (recebido ${params.value})`)
+    }
+
+    if (params.dryRun) {
+        console.log(
+            `[stays:dry-run] applyPromotion apt=${params.listingPartnerCode} ${params.from}→${params.to} ${params.isIncrease ? "+" : "-"}${params.value}%`,
+        )
+        return { dryRun: true }
+    }
+
+    const result = await staysJsonRpc(
+        "promotion.editPromotionSimple",
+        [
+            "",
+            {
+                _dtfrom: `${params.from}T12:00:00.00Z`,
+                _dtto: `${params.to}T12:00:00.00Z`,
+                weekdays: params.weekdays ?? [0, 1, 2, 3, 4, 5, 6],
+                _f_value: params.value,
+                _b_rise: params.isIncrease ? 1 : 0,
+                _idapartment: params.listingPartnerCode,
+            },
+        ],
+        { referer: "https://beto.stays.com.br/i/calendars" },
+    )
+    return { dryRun: false, result }
+}
+
+/** Re-export para callers que precisam tratar StaysSessionError. */
+export { StaysSessionError }
