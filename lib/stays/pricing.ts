@@ -434,7 +434,9 @@ export async function applyPromotion(params: {
 
 export interface MasterCandidate {
     _id: string
-    id: string // partnerCode curto
+    id: string // partnerCode curto (ex.: "GK01J")
+    /** Nome interno (Stays chama de "avatar") — ex.: "AL - Milagres - Villa Pysa - Casa 02 - Paula Guimaraes". */
+    avatar?: string
     _idregion?: string
     _idowner?: string
     _idbuilding?: string

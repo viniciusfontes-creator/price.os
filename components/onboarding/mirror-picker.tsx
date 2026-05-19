@@ -21,6 +21,7 @@ import { Layers, Loader2 } from "lucide-react"
 interface MasterCandidate {
     _id: string
     id: string
+    avatar?: string
     _adr?: { str?: string; num?: string; region?: string; city?: string }
 }
 
@@ -70,7 +71,7 @@ export function MirrorPicker({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     masterListingId: c._id,
-                    masterName: c.id,
+                    masterName: c.avatar || c.id,
                 }),
             })
             const body = await res.json().catch(() => ({}))
@@ -170,20 +171,29 @@ export function MirrorPicker({
                             )}
                             {candidates && candidates.length > 0 && (
                                 <CommandGroup>
-                                    {candidates.map((c) => (
-                                        <CommandItem
-                                            key={c._id}
-                                            value={`${c.id} ${formatAddress(c)}`}
-                                            onSelect={() => setConfirm(c)}
-                                        >
-                                            <div className="flex flex-col">
-                                                <span className="font-medium">{c.id}</span>
-                                                <span className="text-xs text-muted-foreground">
-                                                    {formatAddress(c)}
+                                    {candidates.map((c) => {
+                                        const name = c.avatar || c.id
+                                        const addr = formatAddress(c)
+                                        return (
+                                            <CommandItem
+                                                key={c._id}
+                                                // value alimenta a busca do cmdk
+                                                value={`${name} ${c.id} ${addr}`}
+                                                onSelect={() => setConfirm(c)}
+                                                className="flex flex-col items-start gap-0.5 py-2"
+                                            >
+                                                <span className="font-medium text-sm leading-tight">
+                                                    {name}
                                                 </span>
-                                            </div>
-                                        </CommandItem>
-                                    ))}
+                                                <span className="text-[11px] text-muted-foreground leading-tight">
+                                                    <code className="bg-muted/60 px-1 rounded mr-1">
+                                                        {c.id}
+                                                    </code>
+                                                    {addr}
+                                                </span>
+                                            </CommandItem>
+                                        )
+                                    })}
                                 </CommandGroup>
                             )}
                         </CommandList>
