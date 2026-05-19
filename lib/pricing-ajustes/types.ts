@@ -1,5 +1,6 @@
 export type PricingConfianca = "alta" | "media" | "baixa"
 export type PricingStatus = "pendente" | "aprovado" | "rejeitado" | "aplicado" | "falhou"
+export type StaysSyncStatus = "synced" | "dry_run" | "unmapped" | "error"
 export type PricingSaude =
   | "barato"
   | "barato_recuperavel"
@@ -51,6 +52,10 @@ export interface PricingAjusteProposto {
   baserate_aplicado: number | null
   applied_at: string | null
   apply_error: string | null
+
+  stays_sync_status: StaysSyncStatus | null
+  stays_synced_at: string | null
+  stays_sync_errors: unknown | null
 
   created_at: string
 }

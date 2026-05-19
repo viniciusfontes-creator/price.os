@@ -4,6 +4,8 @@ import { z } from "zod"
 import { authOptions } from "@/app/api/auth/[...nextauth]/route"
 import { getSupabaseAdmin } from "@/lib/supabase-server"
 import { canApprove } from "@/lib/metas-ajustes/rbac"
+import { applyPricingAjusteToStays } from "@/lib/stays/sync-helpers"
+import { isPricingApplyDryRun } from "@/lib/stays/dry-run"
 
 const decisionSchema = z.object({
   acao: z.enum(["aprovar", "rejeitar"]),
@@ -100,7 +102,47 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: updErr.message }, { status: 500 })
   }
 
+  let staysSync: Awaited<ReturnType<typeof applyPricingAjusteToStays>> | null = null
+
   if (novoStatus === "aprovado") {
+    // 1. Sincroniza com a Stays (pista independente do webhook N8N)
+    try {
+      staysSync = await applyPricingAjusteToStays(
+        {
+          id: updated.id,
+          idpropriedade: updated.idpropriedade,
+          period_id: updated.period_id,
+          baserate_aplicado: Number(valorFinal),
+        },
+        { dryRun: isPricingApplyDryRun(), supabase },
+      )
+      await supabase
+        .from("pricing_ajustes_propostos")
+        .update({
+          stays_sync_status: staysSync.status,
+          stays_synced_at: staysSync.syncedAt,
+          stays_sync_errors: staysSync.errors as Record<string, unknown> | null,
+        })
+        .eq("id", id)
+    } catch (err) {
+      console.error("[pricing-ajustes] stays sync threw:", err)
+      const syncedAt = new Date().toISOString()
+      const errorPayload = {
+        reason: "unexpected_exception",
+        detail: err instanceof Error ? err.message : String(err),
+      }
+      staysSync = { status: "error", syncedAt, errors: errorPayload, resolved: null }
+      await supabase
+        .from("pricing_ajustes_propostos")
+        .update({
+          stays_sync_status: "error",
+          stays_synced_at: syncedAt,
+          stays_sync_errors: errorPayload,
+        })
+        .eq("id", id)
+    }
+
+    // 2. Webhook N8N (faz outras coisas — Sheets/notificações, NÃO toca na Stays)
     const webhookUrl = process.env.N8N_APLICAR_BASERATE_WEBHOOK_URL
     if (webhookUrl) {
       try {
@@ -126,5 +168,5 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   }
 
-  return NextResponse.json({ data: updated })
+  return NextResponse.json({ data: updated, stays_sync: staysSync })
 }

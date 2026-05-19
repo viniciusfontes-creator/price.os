@@ -19,6 +19,10 @@ import {
   Tags,
   ShieldCheck,
   CheckCircle2,
+  Cloud,
+  CloudOff,
+  FlaskConical,
+  RefreshCw,
 } from "lucide-react"
 import {
   Bar,
@@ -73,6 +77,7 @@ import type {
   PricingStatus,
   PricingConfianca,
   PricingSaude,
+  StaysSyncStatus,
 } from "@/lib/pricing-ajustes/types"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
@@ -151,6 +156,47 @@ function SaudeBadge({ s }: { s: PricingSaude | null }) {
     sem_dados: "bg-zinc-100 text-zinc-500 border-zinc-200",
   }
   return <span className={`text-[10px] px-2 py-0.5 rounded border ${colors[s]}`}>{SAUDE_LABEL[s]}</span>
+}
+
+const STAYS_SYNC_LABEL: Record<StaysSyncStatus, string> = {
+  synced: "Aplicado na Stays",
+  dry_run: "Simulado (dry-run)",
+  unmapped: "Não mapeado na Stays",
+  error: "Falha ao aplicar",
+}
+
+function StaysSyncBadge({ status }: { status: StaysSyncStatus | null | undefined }) {
+  if (!status) return null
+  const config = {
+    synced: { Icon: Cloud, cls: "bg-emerald-100 text-emerald-900 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200" },
+    dry_run: { Icon: FlaskConical, cls: "bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-200" },
+    unmapped: { Icon: CloudOff, cls: "bg-amber-100 text-amber-900 border-amber-200 dark:bg-amber-950 dark:text-amber-200" },
+    error: { Icon: AlertTriangle, cls: "bg-rose-100 text-rose-900 border-rose-200 dark:bg-rose-950 dark:text-rose-200" },
+  }[status]
+  const { Icon, cls } = config
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border ${cls}`}>
+      <Icon className="h-3 w-3" />
+      {STAYS_SYNC_LABEL[status]}
+    </span>
+  )
+}
+
+function staysSyncErrorSummary(errors: unknown): string {
+  if (!errors || typeof errors !== "object") return "Sem detalhes"
+  const e = errors as Record<string, unknown>
+  if (typeof e.reason === "string" && typeof e.detail === "string") {
+    return `${e.reason}: ${e.detail}`
+  }
+  if (Array.isArray(e.items) && e.items.length > 0) {
+    return e.items
+      .map((it) => {
+        const item = it as Record<string, unknown>
+        return `season ${item.seasonId} → ${item.status} ${item.message}`
+      })
+      .join(" · ")
+  }
+  return JSON.stringify(errors)
 }
 
 function DeltaBadge({ delta }: { delta: number }) {
@@ -509,6 +555,12 @@ function KanbanCard({
           </span>
         )}
       </div>
+
+      {p.stays_sync_status && (
+        <div className="pt-0.5">
+          <StaysSyncBadge status={p.stays_sync_status} />
+        </div>
+      )}
     </div>
     </DraggableCard>
   )
@@ -616,13 +668,14 @@ function PropostaTable({
             <TableHead>Saúde</TableHead>
             <TableHead>Conf.</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Stays</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {propostas.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={showSelection ? 10 : 9}
+                colSpan={showSelection ? 11 : 10}
                 className="text-center py-8 text-muted-foreground"
               >
                 Nenhuma proposta encontrada
@@ -665,6 +718,9 @@ function PropostaTable({
                 <TableCell>
                   <StatusBadge status={p.status} />
                 </TableCell>
+                <TableCell>
+                  <StaysSyncBadge status={p.stays_sync_status} />
+                </TableCell>
               </TableRow>
             ))
           )}
@@ -700,6 +756,13 @@ export default function PrecificacaoPage() {
     `/api/pricing/ajustes?status=todos&limit=1000`,
     fetcher,
   )
+
+  const { data: dryRunData } = useSWR<{ pricing: boolean }>(
+    `/api/stays/dry-run-status`,
+    fetcher,
+    { refreshInterval: 60_000 },
+  )
+  const pricingIsDryRun = dryRunData?.pricing === true
 
   const todasPropostas = data?.data ?? []
 
@@ -826,9 +889,15 @@ export default function PrecificacaoPage() {
       setComentario("")
       setValorEditado("")
       await mutate()
+      const sync = json.stays_sync as { status: StaysSyncStatus } | null
+      const syncSuffix =
+        acao === "aprovar" && sync
+          ? ` • Stays: ${STAYS_SYNC_LABEL[sync.status]}`
+          : ""
       toast({
         title: acao === "aprovar" ? "Proposta aprovada" : "Proposta rejeitada",
-        description: `#${id} • ${STATUS_LABEL[json.data.status as PricingStatus]}`,
+        description: `#${id} • ${STATUS_LABEL[json.data.status as PricingStatus]}${syncSuffix}`,
+        variant: sync?.status === "error" ? "destructive" : undefined,
       })
     } catch (err) {
       await mutate()
@@ -840,6 +909,30 @@ export default function PrecificacaoPage() {
     } finally {
       markProcessing([id], false)
       setSubmitting(false)
+    }
+  }
+
+  async function handleResync(id: number) {
+    markProcessing([id], true)
+    try {
+      const res = await fetch(`/api/pricing/ajustes/${id}/resync`, { method: "POST" })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Erro")
+      await mutate()
+      const sync = json.stays_sync as { status: StaysSyncStatus }
+      toast({
+        title: "Stays sync",
+        description: `#${id} → ${STAYS_SYNC_LABEL[sync.status]}`,
+        variant: sync.status === "error" || sync.status === "unmapped" ? "destructive" : undefined,
+      })
+    } catch (err) {
+      toast({
+        title: "Erro ao ressincronizar",
+        description: err instanceof Error ? err.message : "Falha desconhecida",
+        variant: "destructive",
+      })
+    } finally {
+      markProcessing([id], false)
     }
   }
 
@@ -902,6 +995,18 @@ export default function PrecificacaoPage() {
           </p>
         </div>
       </div>
+
+      {pricingIsDryRun && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950 dark:border-amber-900 px-4 py-2.5 flex items-center gap-2 text-sm text-amber-900 dark:text-amber-200">
+          <FlaskConical className="h-4 w-4 shrink-0" />
+          <div>
+            <span className="font-medium">Modo dry-run ativo.</span> Aprovações vão
+            registrar o valor no Price.OS mas <strong>não</strong> serão aplicadas na
+            Stays — desligue <code className="font-mono text-xs">PRICING_APPLY_DRY_RUN</code> em
+            produção para empurrar os preços de verdade.
+          </div>
+        </div>
+      )}
 
       <KpiCards propostas={propostasFiltradas} />
 
@@ -1285,6 +1390,53 @@ export default function PrecificacaoPage() {
                   </div>
                 )}
 
+                {dropOpen.stays_sync_status && (
+                  <div className="rounded-lg border p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-medium">Sincronização com a Stays</div>
+                      <StaysSyncBadge status={dropOpen.stays_sync_status} />
+                    </div>
+                    {dropOpen.stays_synced_at && (
+                      <div className="text-xs text-muted-foreground">
+                        {dropOpen.stays_sync_status === "synced" && "Aplicado em "}
+                        {dropOpen.stays_sync_status === "dry_run" && "Simulado em "}
+                        {dropOpen.stays_sync_status === "unmapped" && "Tentado em "}
+                        {dropOpen.stays_sync_status === "error" && "Falhou em "}
+                        {format(new Date(dropOpen.stays_synced_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                      </div>
+                    )}
+                    {Boolean(dropOpen.stays_sync_errors) && (
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                          Ver detalhes
+                        </summary>
+                        <div className="mt-2 font-mono bg-muted/40 rounded p-2 break-all">
+                          {staysSyncErrorSummary(dropOpen.stays_sync_errors)}
+                        </div>
+                      </details>
+                    )}
+                    {userIsApprover &&
+                      dropOpen.status === "aprovado" &&
+                      (dropOpen.stays_sync_status === "error" ||
+                        dropOpen.stays_sync_status === "unmapped") && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleResync(dropOpen.id)}
+                          disabled={processingIds.has(dropOpen.id)}
+                          className="w-full"
+                        >
+                          {processingIds.has(dropOpen.id) ? (
+                            <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                          )}
+                          Tentar de novo
+                        </Button>
+                      )}
+                  </div>
+                )}
+
                 {userIsApprover && dropOpen.status === "pendente" && (
                   <div className="space-y-3 pt-2 border-t">
                     <div className="space-y-1.5">
@@ -1299,8 +1451,11 @@ export default function PrecificacaoPage() {
                       />
                       <p className="text-xs text-muted-foreground">
                         Deixe vazio para usar o valor sugerido ({fmtBRL(dropOpen.baserate_sugerido)}).
-                        ⚠ A aplicação atual apenas marca como aprovado — você precisa atualizar o
-                        baserate manualmente no Stays.
+                        {pricingIsDryRun ? (
+                          <> Modo dry-run ativo: o valor é registrado aqui mas não é aplicado na Stays.</>
+                        ) : (
+                          <> Ao aprovar, o baserate é aplicado automaticamente na Stays.</>
+                        )}
                       </p>
                     </div>
                     <div className="space-y-1.5">
