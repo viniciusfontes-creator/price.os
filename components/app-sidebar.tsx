@@ -190,6 +190,11 @@ const allMenuItems: MenuItem[] = [
         href: "/system/stays-webhooks",
         icon: Webhook,
       },
+      {
+        title: "Sazonalidades",
+        href: "/system/sazonalidades",
+        icon: Calendar,
+      },
     ],
   },
 ]

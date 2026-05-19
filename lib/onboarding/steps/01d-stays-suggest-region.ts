@@ -1,48 +1,17 @@
 /**
- * Step 01d: Sugere a Region (regra de preço) provável pra unidade nova.
+ * Step 01d: Sugere a Region (regra de preço) da Stays para a unidade nova.
  *
- * Heurística (em ordem de preferência):
- *   1. Se a listing já tem seasons no snapshot, descobrir a region via UI Stays
- *      é impossível direto via API — mas podemos inferir pelo padrão do nome
- *      do `Season_Nome` (tabela warehouse). Por enquanto, usar fallback abaixo.
- *   2. Mapear praça do BQ → region pelo prefixo do nome:
- *        "Milagres" / "São Miguel dos Milagres" → "[Short Stay] - Rota Milagres"
- *        "Pipa" / "Tibau do Sul"               → "[Short Stay] - Pipa e proximidades"
- *        ...
- *   3. Em último caso, retorna null (operador escolhe na UI).
+ * v2 (2026-05-18): consulta o vínculo persistido em `seasonalities.stays_region_id`
+ * via `seasonality_pracas`. Antes era hardcoded em PRACA_TO_REGION_NAME — agora a
+ * operação edita em /system/sazonalidades sem precisar de PR.
  *
- * Não falha o pipeline se não conseguir mapear — apenas marca null e
- * deixa a decisão pro operador na tab Pricing.
+ * Fallback: se a praça não tem sazonalidade ou a sazonalidade não tem region
+ * vinculada, retorna confidence="none" e o operador escolhe na UI.
  */
 
-import { listPriceRegions, type PriceRegion } from "@/lib/stays/pricing"
+import { getSupabaseAdmin } from "@/lib/supabase-server"
+import { listPriceRegions } from "@/lib/stays/pricing"
 import type { PipelineContext } from "../types"
-
-const PRACA_TO_REGION_NAME: Record<string, string> = {
-    // AL
-    "Maceió": "[Short Stay] Maceió",
-    "Milagres": "[Short Stay] - Rota Milagres",
-    "São Miguel dos Milagres": "[Short Stay] - Rota Milagres",
-    "Passo de Camaragibe": "[Short Stay] - Rota Milagres",
-    "Porto de Pedras": "[Short Stay] - Rota Milagres",
-    "Japaratinga": "[Short Stay] - Rota Milagres",
-    // RN
-    "Pipa": "[Short Stay] - Pipa e proximidades",
-    "Tibau do Sul": "[Short Stay] - Pipa e proximidades",
-    "Jacumã": "[Short Stay] - Pipa e proximidades",
-    "Natal": "[Short Stay] - Litoral Sul e Norte RN",
-    "Cotovelo": "[Short Stay] - Litoral Sul e Norte RN",
-    "Pirangi do Norte": "[Short Stay] - Litoral Sul e Norte RN",
-    "Parnamirim": "[Short Stay] - Litoral Sul e Norte RN",
-    "Nísia Floresta": "[Short Stay] - Litoral Sul e Norte RN",
-    "São Miguel do Gostoso": "[Short Stay] - Litoral Sul e Norte RN",
-    "Praia de Búzios": "[Short Stay] - Litoral Sul e Norte RN",
-    "Praia do Riacho": "[Short Stay] - Litoral Sul e Norte RN",
-    // PB
-    "Bananeiras": "[Short Stay] - Bananeiras",
-    "João Pessoa": "[Short Stay] - João Pessoa e proximidades",
-    "Cabedelo": "[Short Stay] - João Pessoa e proximidades",
-}
 
 export interface SuggestRegionResult {
     region_id: string | null
@@ -62,42 +31,72 @@ export async function staysSuggestRegion(ctx: PipelineContext): Promise<SuggestR
         }
     }
 
-    const targetName = PRACA_TO_REGION_NAME[praca]
-    if (!targetName) {
+    const supabase = getSupabaseAdmin()
+    if (!supabase) {
         return {
             region_id: null,
             region_name: null,
             confidence: "none",
-            reason: `Praça "${praca}" não mapeada — operador precisa escolher manualmente`,
+            reason: "Supabase indisponível",
         }
     }
 
-    let regions: PriceRegion[]
+    // 1. Praça → sazonalidade
+    const { data: pracaRow } = await supabase
+        .from("seasonality_pracas")
+        .select("seasonality_id")
+        .eq("praca", praca)
+        .maybeSingle()
+
+    if (!pracaRow?.seasonality_id) {
+        return {
+            region_id: null,
+            region_name: null,
+            confidence: "none",
+            reason: `Praça "${praca}" não tem sazonalidade cadastrada — configure em /system/sazonalidades`,
+        }
+    }
+
+    // 2. Sazonalidade → region vinculada
+    const { data: seasonality } = await supabase
+        .from("seasonalities")
+        .select("name, stays_region_id, stays_region_name")
+        .eq("id", pracaRow.seasonality_id)
+        .single()
+
+    if (!seasonality?.stays_region_id) {
+        return {
+            region_id: null,
+            region_name: seasonality?.stays_region_name ?? null,
+            confidence: "none",
+            reason: `Sazonalidade "${seasonality?.name ?? "?"}" não tem region Stays vinculada — configure em /system/sazonalidades`,
+        }
+    }
+
+    // 3. Validar que a region ainda existe na Stays (rede + cache fresh)
     try {
-        regions = await listPriceRegions()
+        const regions = await listPriceRegions()
+        const match = regions.find((r) => r._id === seasonality.stays_region_id)
+        if (!match) {
+            return {
+                region_id: seasonality.stays_region_id,
+                region_name: seasonality.stays_region_name,
+                confidence: "low",
+                reason: `Region ${seasonality.stays_region_id} (cache: "${seasonality.stays_region_name}") não está mais ativa na Stays — verificar cadastro`,
+            }
+        }
+        return {
+            region_id: match._id,
+            region_name: match.name,
+            confidence: "high",
+            reason: `Vinculada via sazonalidade "${seasonality.name}" (praça "${praca}")`,
+        }
     } catch (e) {
         return {
-            region_id: null,
-            region_name: targetName,
-            confidence: "low",
-            reason: `Falha ao listar regions na Stays: ${(e as Error).message}. Nome sugerido pelo mapping local.`,
+            region_id: seasonality.stays_region_id,
+            region_name: seasonality.stays_region_name,
+            confidence: "medium",
+            reason: `Falha ao validar na Stays — usando cache (${(e as Error).message})`,
         }
-    }
-
-    const match = regions.find((r) => r.name === targetName)
-    if (!match) {
-        return {
-            region_id: null,
-            region_name: targetName,
-            confidence: "low",
-            reason: `Region "${targetName}" não encontrada nas regions ativas da Stays — verificar cadastro`,
-        }
-    }
-
-    return {
-        region_id: match._id,
-        region_name: match.name,
-        confidence: "high",
-        reason: `Mapeado por praça "${praca}" → "${targetName}"`,
     }
 }
